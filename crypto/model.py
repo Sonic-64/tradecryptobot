@@ -6,31 +6,43 @@ import joblib
 from datetime import datetime, timezone
 from pathlib import Path
 import json
-
-
-
-class LSTMModel(nn.Module):
-    def __init__(self, input_size, hidden_size=64, num_layers=2,dropout=0.2):
-        super(LSTMModel, self).__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True,dropout=dropout)
-        self.fc_class = nn.Linear(hidden_size, 1)  # surowe logity
-        self.fc_price = nn.Linear(hidden_size, 1)
-    
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        out = out[:, -1, :]  # ostatni krok
-        class_logits = self.fc_class(out)  # logity (nie sigmoid!)
-        price_out = self.fc_price(out)
-        return class_logits, price_out
-
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+class MLPModel(nn.Module):
+    def __init__(self, input_size, k=2, hidden_size=32, dropout=0.3):
+        """
+        input_size: number of features per candle (F)
+        k: number of last candles to use
+        """
+        super().__init__()
 
+        self.k = k
+        self.flattened_size = input_size * k
 
+        self.net = nn.Sequential(
+            nn.Linear(self.flattened_size, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, 1)  # binary logit output
+        )
 
+    def forward(self, x):
+        """
+        x shape: (B, T, F)
+        """
+        # Take last k candles
+        last_k = x[:, -self.k:, :]  # (B, k, F)
 
+        # Flatten
+        last_k = last_k.reshape(x.size(0), -1)  # (B, k*F)
+
+        logits = self.net(last_k)
+
+        return logits
 
 # Version with both improvements but simpler combination
 class ImprovedLSTMModel(nn.Module):
@@ -76,7 +88,6 @@ class ImprovedLSTMModel(nn.Module):
 
         # 6. Output heads
         self.class_head = nn.Linear(128, 1)
-        self.price_head = nn.Linear(128, 1)
 
     def forward(self, x):
         batch_size, seq_len, features = x.shape
@@ -108,76 +119,91 @@ class ImprovedLSTMModel(nn.Module):
         out = self.relu(out)
         out = self.dropout(out)
 
-        return self.class_head(out), self.price_head(out)
+        return self.class_head(out)
 
 
-# Example usage in your training code:
+class CNNModel(nn.Module):
+    """
+    1-D Temporal CNN for binary direction classification.
 
+    Input:  (B, T, F)  — same window as LSTM, optionally sliced to recent N steps
+    Output: logit (B,) — single value per sample; sigmoid → probability of UP
 
-    # Keep everything else the same!
-class EImprovedLSTMModel(nn.Module):
-    def __init__(self, input_size, hidden_size=128, num_layers=2, dropout=0.3):
+    Architecture:
+      input_proj  : Linear F → num_filters   (applied per timestep)
+      conv blocks : 3× dilated causal Conv1d with residual skip
+                    dilation 1 → 2 → 4, receptive field grows exponentially
+      global pool : mean over time → (B, C)
+      FC head     : Linear → logit
+    """
+
+    def __init__(
+        self,
+        input_size: int,
+        num_filters: int = 32,
+        kernel_size: int = 3,
+        num_blocks: int = 3,
+        dropout: float = 0.5,
+
+    ):
         super().__init__()
 
-        self.lstm = nn.LSTM(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout,
-            bidirectional=True
+
+        self.input_proj = nn.Linear(input_size, num_filters)
+
+        self.blocks = nn.ModuleList()
+        for i in range(num_blocks):
+            dilation = 2 ** i
+            padding  = (kernel_size - 1) * dilation
+            self.blocks.append(
+                nn.Sequential(
+                    nn.Conv1d(
+                        num_filters, num_filters,
+                        kernel_size=kernel_size,
+                        dilation=dilation,
+                        padding=padding,
+                    ),
+                    nn.BatchNorm1d(num_filters),
+                    nn.GELU(),
+                    nn.Dropout(dropout),
+                )
+            )
+
+        self.trunk = nn.Sequential(
+            nn.Linear(num_filters, num_filters // 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
         )
-
-        # Dodaj jedną warstwę pośrednią
-        self.fc_mid = nn.Linear(hidden_size * 2, 64)
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(dropout)
-
-        self.fc_class = nn.Linear(64, 1)
-        self.fc_price = nn.Linear(64, 1)
+        self.classifier = nn.Linear(num_filters // 2, 1)
 
     def forward(self, x):
-        out, _ = self.lstm(x)
-        out = out[:, -1, :]
+        # x: (B, T, F)
 
-        # Dodaj non-linearity
-        out = self.fc_mid(out)
-        out = self.relu(out)
-        out = self.dropout(out)
+        # Optionally slice to most recent N steps
+        # e.g. cnn_window_steps=42 → last 7 days of 4h candles
 
-        class_logits = self.fc_class(out)
-        price_out = self.fc_price(out)
-        return class_logits, price_out
+        x = x[:, -42:, :]   # (B, N, F)
 
-class BinaryModel(nn.Module):
-    def __init__(self, input_size, hidden_size=64, num_layers=2, dropout=0.2):
-        super(LSTMModel, self).__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
-        self.fc_class = nn.Linear(hidden_size, 1)  # surowe logity
+        # Project features: (B, T, F) → (B, T, C)
+        x = self.input_proj(x)
 
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        out = out[:, -1, :]  # ostatni krok
-        class_logits = self.fc_class(out)  # logity (nie sigmoid!)
-        return class_logits
+        # Conv1d expects (B, C, T)
+        x = x.permute(0, 2, 1)
 
-class PriceModel(nn.Module):
-    """
-    Przewidywanie ceny 
-    """
-    def __init__(self,input_size=9,hidden_size=64,num_layers=2,dropout=0.2):
-        super(PriceModel,self).__init__()
-        self.lstm = nn.LSTM(input_size=input_size,
-                            hidden_size=hidden_size,
-                            num_layers=num_layers,
-                            dropout=dropout,
-                            batch_first=True)
-        self.fc = nn.Linear(hidden_size,1)
+        # Dilated causal conv blocks with residual skip
+        for block in self.blocks:
+            residual = x
+            out      = block(x)
+            out      = out[..., :x.size(-1)]   # trim causal padding
+            x        = out + residual
 
-    def forward(self,x):
-        out, _ = self.lstm(x)
-        last_step = out[:,-1,:]
-        return self.fc(last_step)
+        # Global average pool over time → (B, C)
+        x = x.mean(dim=-1)
+
+        # FC head → single logit per sample
+        x = self.trunk(x)
+        return self.classifier(x)  # (B,)
+
 
 
 class CryptoEnsemble:
@@ -227,9 +253,6 @@ class CryptoEnsemble:
             self.models.append(model)
 
         # Get weights (use validation accuracy)
-        self.weights = np.array(self.info.get('weights', [1.0 / len(self.models)] * len(self.models)))
-        print(f"✅ Loaded ensemble with {len(self.models)} models")
-        print(f"   Weights: {self.weights}")
 
     def predict(self, X_raw):
         """
@@ -247,20 +270,17 @@ class CryptoEnsemble:
 
             # Predict
             with torch.no_grad():
-                logits, pred_change = model(X_tensor)
+                logits = model(X_tensor)
                 prob = torch.sigmoid(logits).item()
-                change = pred_change.item()
 
             all_probs.append(prob)
-            all_changes.append(change)
 
         # Weighted average
         ensemble_prob = np.average(all_probs, weights=self.weights)
-        ensemble_change = np.average(all_changes, weights=self.weights)
 
         # Calculate agreement (standard deviation of predictions) # Normalized 0-1
 
-        return ensemble_prob,ensemble_change
+        return ensemble_prob,
 
 # Test if code runs
 class FocalLoss(nn.Module):

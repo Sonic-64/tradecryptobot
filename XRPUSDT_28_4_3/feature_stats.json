@@ -1,0 +1,138 @@
+{
+  "time_local_Low": {
+    "up_mean": -0.1217,
+    "down_mean": 0.1061,
+    "up_std": 0.9842,
+    "down_std": 1.0617,
+    "diff": 0.2279,
+    "separation": 0.2227
+  },
+  "Close": {
+    "up_mean": -0.1256,
+    "down_mean": 0.0593,
+    "up_std": 0.9556,
+    "down_std": 0.9905,
+    "diff": 0.1848,
+    "separation": 0.19
+  },
+  "MACD": {
+    "up_mean": -0.1362,
+    "down_mean": 0.0032,
+    "up_std": 1.0345,
+    "down_std": 0.9528,
+    "diff": 0.1394,
+    "separation": 0.1403
+  },
+  "Volume": {
+    "up_mean": 0.0441,
+    "down_mean": -0.0706,
+    "up_std": 1.2472,
+    "down_std": 0.7534,
+    "diff": 0.1147,
+    "separation": 0.1147
+  },
+  "volatility_ratio": {
+    "up_mean": -0.0418,
+    "down_mean": 0.073,
+    "up_std": 1.0466,
+    "down_std": 0.9851,
+    "diff": 0.1148,
+    "separation": 0.113
+  },
+  "RSI": {
+    "up_mean": -0.1628,
+    "down_mean": -0.0556,
+    "up_std": 1.0302,
+    "down_std": 0.979,
+    "diff": 0.1072,
+    "separation": 0.1068
+  },
+  "pct_change": {
+    "up_mean": -0.0532,
+    "down_mean": 0.054,
+    "up_std": 1.0083,
+    "down_std": 1.0473,
+    "diff": 0.1071,
+    "separation": 0.1042
+  },
+  "rsi_momentum": {
+    "up_mean": 0.0392,
+    "down_mean": -0.0483,
+    "up_std": 1.0674,
+    "down_std": 0.9187,
+    "diff": 0.0875,
+    "separation": 0.0881
+  },
+  "time_local_High": {
+    "up_mean": 0.1156,
+    "down_mean": 0.0476,
+    "up_std": 1.0267,
+    "down_std": 0.9227,
+    "diff": 0.068,
+    "separation": 0.0698
+  },
+  "bb_position": {
+    "up_mean": -0.0345,
+    "down_mean": 0.0254,
+    "up_std": 1.0341,
+    "down_std": 0.9835,
+    "diff": 0.0599,
+    "separation": 0.0594
+  },
+  "squeeze_pressure": {
+    "up_mean": -0.0459,
+    "down_mean": 0.0031,
+    "up_std": 1.1142,
+    "down_std": 0.8978,
+    "diff": 0.049,
+    "separation": 0.0487
+  },
+  "Number of Trades": {
+    "up_mean": 0.0132,
+    "down_mean": -0.033,
+    "up_std": 1.0736,
+    "down_std": 0.9092,
+    "diff": 0.0462,
+    "separation": 0.0466
+  },
+  "bb_width": {
+    "up_mean": 0.0378,
+    "down_mean": -0.0002,
+    "up_std": 1.0343,
+    "down_std": 0.9847,
+    "diff": 0.038,
+    "separation": 0.0376
+  },
+  "volume_zscore": {
+    "up_mean": 0.0392,
+    "down_mean": 0.0099,
+    "up_std": 0.9999,
+    "down_std": 1.013,
+    "diff": 0.0293,
+    "separation": 0.0292
+  },
+  "taker_buy_ratio": {
+    "up_mean": 0.0134,
+    "down_mean": 0.0422,
+    "up_std": 0.9829,
+    "down_std": 1.0225,
+    "diff": 0.0288,
+    "separation": 0.0287
+  },
+  "mean_reversion": {
+    "up_mean": -0.005,
+    "down_mean": 0.0137,
+    "up_std": 0.7732,
+    "down_std": 1.2109,
+    "diff": 0.0187,
+    "separation": 0.0189
+  },
+  "Volatility": {
+    "up_mean": 0.0277,
+    "down_mean": 0.0138,
+    "up_std": 1.0139,
+    "down_std": 1.0531,
+    "diff": 0.0139,
+    "separation": 0.0134
+  }
+}

@@ -49,12 +49,14 @@ def download_data(symbol: str, months: int, interval: str = "1h",cutoff:int=0):
         end_time = datetime.now() - timedelta(days=(int(cutoff)))
         start_time = end_time - timedelta(days=int(round(months * 30.44)))  # ~30.44 days/month
         start_str = start_time.strftime("%d %b %Y")
+        end_str = end_time.strftime("%d %b %Y")
 
         # Fetch with auto-pagination (handles limits)
     klines = client.get_historical_klines(
         symbol,
         interval,
-        start_str=start_str
+        start_str=start_str,
+        end_str=end_str
     )
     columns_to_convert = ['Open', 'High', 'Low', 'Close', 'Volume', 'Quote Asset Volume', 'Number of Trades',
                           'Taker Buy Base Asset Volume', 'Taker Buy Quote Asset Volume']
@@ -119,13 +121,13 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     # Dodaj małą stałą aby uniknąć dzielenia przez 0
     df_resampled['volume_zscore'] = (df_resampled['Volume'] - volume_mean) / (volume_std + 1e-8)
     df_resampled['volume_zscore'] = df_resampled['volume_zscore'].clip(-5, 5)
-    df_resampled['local_ATH'] = df_resampled['Close'].rolling(window=50, min_periods=1).max()
-    df_resampled['local_ATL'] = df_resampled['Close'].rolling(window=50, min_periods=1).min()
+    df_resampled['local_ATH'] = df_resampled['Close'].rolling(window=168, min_periods=1).max()
+    df_resampled['local_ATL'] = df_resampled['Close'].rolling(window=168, min_periods=1).min()
     df_resampled['pct_change'] = df_resampled['Close'].pct_change(periods=3,fill_method=None)
     df_resampled['pct_change'] = df_resampled['pct_change'].fillna(0.0)
     is_ath = df_resampled['Close'] == df_resampled['local_ATH']
     is_atl = df_resampled['Close'] == df_resampled['local_ATL']
-    
+
     # Time since local high
     not_ath = ~is_ath
     cumsum_not_ath = not_ath.cumsum()
@@ -137,10 +139,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     cumsum_not_atl = not_atl.cumsum()
     last_atl_cumsum = cumsum_not_atl.where(is_atl).ffill().fillna(0)
     df_resampled['time_local_Low'] = cumsum_not_atl - last_atl_cumsum
-    
-    # Temporal features
-    df_resampled['day_of_week'] = np.sin(2 * np.pi * df_resampled.index.dayofweek / 7)
-    df_resampled['hour'] = np.sin(2 * np.pi * df_resampled.index.hour / 24)
+
     df_resampled['log_return_1h'] = np.log(df_resampled['Close'] / df_resampled['Close'].shift(1)).fillna(0)
 
     # 2. VOLATILITY RATIO (short-term vs long-term volatility)
@@ -159,20 +158,19 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
             df_resampled['Taker Buy Base Asset Volume'] /
             (df_resampled['Volume'] + 1e-8)
     )
-
-    # Technical indicators with safe NaN handling
+    df_resampled['Volume'] = df_resampled['Volume'] / df_resampled['Close']    # Technical indicators with safe NaN handling
     # EMA
     df_resampled['EMA_12'] = df_resampled['Close'].ewm(span=12, min_periods=1,adjust=False).mean()
     df_resampled['EMA_26'] = df_resampled['Close'].ewm(span=26, min_periods=1,adjust=False).mean()
     
     # MACD
-    df_resampled['MACD'] = df_resampled['EMA_12'] - df_resampled['EMA_26']
+    df_resampled['MACD'] = (df_resampled['EMA_12'] - df_resampled['EMA_26']) / (df_resampled['Close'] + 1e-8)
     df_resampled['MACD_signal'] = df_resampled['MACD'].ewm(span=9, min_periods=1,adjust=False).mean()
     
     # RSI with safe division
     delta = df_resampled['Close'].diff()
-    gain = delta.where(delta > 0, 0).rolling(window=14, min_periods=1).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=14, min_periods=1).mean()
+    gain = delta.where(delta > 0, 0).rolling(window=168, min_periods=1).mean()
+    loss = -delta.where(delta < 0, 0).rolling(window=168, min_periods=1).mean()
     # Avoid divide by zero
     rs = gain / loss.replace(0, np.nan)
     rs = rs.fillna(0)
@@ -181,13 +179,17 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     # Volatility
     df_resampled['Volatility'] = df_resampled['Close'].rolling(window=12, min_periods=1).std()
     df_resampled['Volatility'] = df_resampled['Volatility'].fillna(0.0)
+    df_resampled['Volatility'] = df_resampled['Volatility'] / df_resampled['Close']
+    df_resampled['hour'] =  df_resampled.index.hour
     bb_ma = df_resampled['Close'].rolling(20).mean()
     bb_std = df_resampled['Close'].rolling(20).std()
     df_resampled['bb_upper'] = bb_ma + (bb_std * 2)
     df_resampled['bb_lower'] = bb_ma - (bb_std * 2)
     df_resampled['bb_position'] = (df_resampled['Close'] - df_resampled['bb_lower']) / ( df_resampled['bb_upper'] - df_resampled['bb_lower'] + 1e-8)
+    df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
-    df_resampled = df_resampled.drop(columns=['local_ATH', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','log_return_1h','bb_position','EMA_26','MACD_signal'])
+
+    df_resampled = df_resampled.drop(columns=['local_ATH', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','log_return_1h','EMA_26','MACD_signal','bb_upper','bb_lower','Open','High','Low','EMA_12'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()
@@ -196,6 +198,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     feature_columns = df_resampled.columns.tolist()
     
     return df_resampled, feature_columns
+
 
 
 def build_windows(
