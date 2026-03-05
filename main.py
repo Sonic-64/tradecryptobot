@@ -32,7 +32,8 @@ if __name__ == "__main__":
     crypto.load_config()
     ##.connect()
     # crypto.api_up()
-
+    if args.predict:
+        crypto.eval_live(months=args.months,window_days=args.window_days,resample_hours=args.resample_hours,horizon=args.horizon)
     if args.data_fetch:
         if args.symbol!="all":
             crypto.make_dataset(

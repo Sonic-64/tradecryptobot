@@ -22,9 +22,8 @@ def _compute_score(accuracy_pct, num_trades):
     base = (2 * accuracy_pct - 0.04)
     if base <= 0:
         return None
-    accuracy_weight = 1.3
-    acc = accuracy_pct / 100.0
-    return round(math.log((2 * acc - 0.04)) * num_trades ** (1/accuracy_weight), 6)
+    accuracy_weight = 1.2
+    return round(math.log(base) * num_trades ** (1/accuracy_weight), 6)
 def load_eval_results(dataset_dir):
     path = Path(dataset_dir) / "eval_results.json"
     if not path.exists():
@@ -85,7 +84,7 @@ def get_best_results(row,get_acc=False):
         "use_cnn": False,
         "use_mlp": False,
         "use_lr": False,
-        "threshold": 0.0,
+        "prop_threshold": 0.0,
         "cnn_threshold":0.0,
         "mlp_threshold":0.0,
         "lr_threshold":0.0,
@@ -103,7 +102,7 @@ def get_best_results(row,get_acc=False):
                 result['use_mlp'] = exists['use_mlp']
                 result['use_cnn'] = exists['use_cnn']
                 result['use_lstm'] = exists['use_lstm']
-                result['threshold'] = exists['threshold']
+                result['prop_threshold'] = exists['threshold']
                 result['cnn_threshold'] = exists['cnn_threshold']
                 result['mlp_threshold'] = exists['mlp_threshold']
                 result['lr_threshold'] = exists['lr_threshold']
@@ -117,7 +116,7 @@ def get_best_results(row,get_acc=False):
                 result['use_mlp'] = exists['use_mlp']
                 result['use_cnn'] = exists['use_cnn']
                 result['use_lstm'] = exists['use_lstm']
-                result['threshold'] = exists['threshold']
+                result['prop_threshold'] = exists['threshold']
                 result['cnn_threshold'] = exists['cnn_threshold']
                 result['mlp_threshold'] = exists['mlp_threshold']
                 result['lr_threshold'] = exists['lr_threshold']

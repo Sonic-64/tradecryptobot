@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 class MLPModel(nn.Module):
-    def __init__(self, input_size, k=2, hidden_size=32, dropout=0.3):
+    def __init__(self, input_size, k=2, hidden_size=32, dropout=0.5):
         """
         input_size: number of features per candle (F)
         k: number of last candles to use

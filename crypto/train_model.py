@@ -15,7 +15,7 @@ from sklearn.metrics import brier_score_loss,roc_auc_score
 import numpy as np
 import json
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from . import MLPModel
@@ -219,7 +219,7 @@ def conf_eval(model,cnn_model,mlp_model,lr_model,loader,use_cnn=True,use_lstm=Tr
         result["median_change"] = round(float(np.median(changes)) * 100, 4)
 
     return accuracy_confidence,result
-def conf_eval_live(model,cnn_model,mlp_model,lr_model,xb,use_cnn=True,use_lstm=True,use_mlp=True,use_lr=True,prop_threshold=0.50,cnn_threshold=0.50,mlp_threshold=0.50,lr_threshold=0.50,label=""):
+def conf_eval_live(model,cnn_model,mlp_model,lr_model,xb,use_cnn=True,use_lstm=True,use_mlp=True,use_lr=True,prop_threshold=0.50,cnn_threshold=0.50,mlp_threshold=0.50,lr_threshold=0.50):
     result = []
     predicted_direction = -1
     with torch.no_grad():
@@ -635,7 +635,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     N_raw = len(X_raw)
 
     # Define boundaries on the FULL unfiltered data
-    train_start = (0.125*N_raw)
+    train_start = int(0.125*N_raw)
     train_end = int((0.70+0.125) * N_raw)
     test_end = int(N_raw)
     save_split(X_raw[train_start:train_end], y_raw[train_start:train_end], dataset_dir, "train")
@@ -666,8 +666,6 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # ===== ALWAYS-UP BASELINE =====
     always_up_acc = (y_test == 1).float().mean().item()
 
-    print("\n===== BASELINE CHECK =====")
-    print(f"Always-UP Accuracy: {always_up_acc:.2%}")
     # Reshape back to original LSTM shape
     X_train = torch.from_numpy(Xtr_2d).float().view(Ntr, T, F)
     X_test = torch.from_numpy(Xte_2d).float().view(Nte, T, F)
@@ -708,8 +706,6 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     best_acc = 0.0
     patience = 50
     patience_counter = 0
-    best_brier = 1
-    print("Starting training with  class accuracy focus...\n")
     for epoch in range(1, EPOCHS + 1):
         # Emphasize classification more heavily (alpha=2.0 vs beta=0.5)
         train_loss = train(
@@ -741,8 +737,6 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     # Load best model for final save
 
-    patience = 20
-    patience_counter = 0
     cnn_model = CNNModel(
         input_size=input_size,
         num_filters=32,
@@ -826,7 +820,6 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     lr_model = LogisticRegression(C=0.1, max_iter=1000, class_weight="balanced")
     lr_model.fit(X_lr, y_lr)
-    lr_val_acc = lr_model.score(X_lr, y_lr)
     joblib.dump(lr_model, f"{dataset_dir}/{SEED}_lr_model.pkl")
     mlp_model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_mlp_model.pt"))
     mlp_model.eval()
@@ -838,7 +831,6 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     return best_acc, 0.0, 0.0, 0.0
 def eval_live(months,window_days,resample_hours,horizon):
-    symbol = "BTCUSDT"
     symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "LTCUSDT"]
     for symbol in symbols:
         make_dataset(
@@ -854,93 +846,82 @@ def eval_live(months,window_days,resample_hours,horizon):
         time.sleep(1)
     for symbol in symbols:
         train_for_live(dataset_dir=f"{symbol}_{window_days}_{resample_hours}_{horizon}")
+    config = {}
+
+    for symbol in symbols:
+        dataset_dir = f"{symbol}_{window_days}_{resample_hours}_{horizon}"
+        eval_results = load_eval_results(dataset_dir)
+
+        config[symbol] = {
+            "eval": get_best_results(eval_results["val"], get_acc=False),
+        }
+
+    training_time = datetime.now()
+    test_live(training_time,config, resample_hours, window_days,horizon)
 
 
-def test_live(symbol,resample_hours,window_days,horizon):
+def test_live(training_time,config,resample_hours,window_days,horizon):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "LTCUSDT"]
-    modelinfo_path = "model_info.json"
-    with open(modelinfo_path, "r") as f:
-        model_info = json.load(f)
 
+    expiry = training_time + timedelta(days=30)
+    symbol_models = {}
     # Convert to numpy arrays
-    symbolss = np.array(model_info['symbols'])
-    accuracies = np.array(model_info['accuracies'])
-    conf_accuracies = np.array(model_info['confidence_accuracies'])
-    best_conf_idx = np.argmax(conf_accuracies)
-    best_acc_idx = np.argmax(accuracies)
-    best_acc = np.max(accuracies)
-    best_conf_acc = np.max(conf_accuracies)
-    print(f"best symbol for confidence trading {symbolss[best_conf_idx]} with acc {best_conf_acc:.2%}")
-    print(f"best symbol for trading {symbolss[best_acc_idx]} with acc {best_acc:.2%}  ")
+    for s in symbols:
+        dataset_dir = f"{s}_{window_days}_{resample_hours}_{horizon}"
+        with open(f"{dataset_dir}/model_config.json") as f:
+            cfg = json.load(f)
 
+        input_size = cfg["input_size"]
 
-    # Set thresholds
-    min_acc = 0.6
-    min_conf = 0.6
+        lstm = ImprovedLSTMModel(input_size=input_size, hidden_size=cfg["hidden_size"],
+                                 num_layers=cfg["num_layers"], dropout=cfg["dropout"]).to(device)
+        lstm.load_state_dict(torch.load(f"{dataset_dir}/42_binary_model.pt", map_location=device))
+        lstm.eval()
+        with open(f"{dataset_dir}/cnn_model_config.json") as f:
+            cnn_cfg = json.load(f)
+        cnn = CNNModel(input_size=input_size,num_filters=cnn_cfg["num_filters"],kernel_size=cnn_cfg["kernel_size"],dropout=cnn_cfg["dropout"]).to(device)
+        cnn.load_state_dict(torch.load(f"{dataset_dir}/42_cnn_model.pt", map_location=device))
+        cnn.eval()
 
-    # Create boolean masks
-    acc_mask = accuracies >= min_acc  # Symbols with accuracy >= 0.6
-    conf_mask = conf_accuracies >= min_conf  # Symbols with conf_accuracy >= 0.6
-    combined_mask = acc_mask | conf_mask  # Symbols that meet EITHER threshold
+        mlp = MLPModel(input_size=input_size, k=12).to(device)
+        mlp.load_state_dict(torch.load(f"{dataset_dir}/42_mlp_model.pt", map_location=device))
+        mlp.eval()
 
-    # Get arrays of qualified symbols
-  # Array of symbols with good confidence accuracy
-    qualified_symbols = symbolss[combined_mask]
+        symbol_models[s] = {
+            "lstm": lstm,
+            "cnn": cnn,
+            "mlp": mlp,
+            "lr": joblib.load(f"{dataset_dir}/42_lr_model.pkl"),
+            "scaler": joblib.load(f"{dataset_dir}/scaler.pkl"),
+        }
+
 
     while True:
+        if datetime.now() > expiry:
+            break
         if check_if_good_for_prediction(resample_hours=resample_hours,max_minutes_after=1):
-            if symbol != "all":
-                with open("model_config.json", "r") as f:
-                    config = json.load(f)
-                dataset_dir = f"{symbol}_{window_days}_{resample_hours}_{horizon}"
-                model = ImprovedLSTMModel(
-                    input_size=config["input_size"],
-                    hidden_size=config["hidden_size"],
-                    num_layers=config["num_layers"],
-                    dropout=config["dropout"],
-                ).to(device)
-                model.load_state_dict(torch.load(f"{dataset_dir}/42_binary_model.pt"))
-                model.eval()
-                scaler_path = Path(dataset_dir) / "scaler.pkl"
-                scaler = joblib.load(scaler_path)
-                X = get_evaluate_window(symbol, window_days, resample_hours)
-                X = scale_live_window(X, scaler)
-                X = torch.tensor(X).to(device)
 
-                with torch.no_grad():
-                    logits, y_change = model(X)
-                    prob_up = torch.sigmoid(logits).item()
-
-                print(f"{symbol}: prob_up={prob_up:.3f}, ")
-                del model
-            else:
-                for s in qualified_symbols:
-                    with open("model_config.json", "r") as f:
-                        config = json.load(f)
-                    dataset_dir = f"{s}_{window_days}_{resample_hours}_{horizon}"
-                    model = ImprovedLSTMModel(
-                        input_size=config["input_size"],
-                        hidden_size=config["hidden_size"],
-                        num_layers=config["num_layers"],
-                        dropout=config["dropout"],
-                    ).to(device)
-                    model.load_state_dict(torch.load(f"{dataset_dir}/42_binary_model.pt"))
-                    model.eval()
-
-                    scaler_path = Path(dataset_dir) / "scaler.pkl"
-                    scaler = joblib.load(scaler_path)
+                for s in symbols:
+                    c = config[s]["eval"]
+                    m = symbol_models[s]
                     X = get_evaluate_window(s,window_days,resample_hours)
-                    X = scale_live_window(X,scaler)
+                    X = scale_live_window(X,m["scaler"])
                     X = torch.tensor(X).to(device)
 
-                    with torch.no_grad():
-                        logits, y_change = model(X)
-                        prob_up = torch.sigmoid(logits).item()
+                    prediction = conf_eval_live(m["lstm"], m["cnn"], m["lr"], m["mlp"],  X,c["use_cnn"],c["use_ltsm"],c["use_mlp"],c["use_lr"],c["prop_threshold"],c["cnn_threshold"],c["mlp_threshold"],c["lr_threshold"])
+                    if prediction != -1:
+                        if prediction == 0:
+                            trade = "SHORT"
+                        else:
+                            trade = "LONG"
+                        accuracy = c["accuracy"]
+                        current_time = datetime.now().strftime("%H:%M:%S")
+                        print(f"[{current_time}] Go {trade} on {s} estimated model accuracy {accuracy:.2%}")
 
-                    print(f"{s}: prob_up={prob_up:.3f}, change={y_change.item():.4f}")
-                    del model
-            time.sleep(int(3550*resample_hours))
+
+
+                time.sleep(int(3500*resample_hours))
     return
 
 
