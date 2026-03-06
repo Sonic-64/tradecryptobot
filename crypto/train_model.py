@@ -24,7 +24,7 @@ from .model import ImprovedLSTMModel,CNNModel,FocalLoss
 from .data_fetch import (
     make_dataset,
     get_evaluate_window,
-    scale_live_window
+    scale_live_window, get_price_at
 )
 
 class NumpyDataset(Dataset):
@@ -965,15 +965,20 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, paper_t
 
             # Close trade if horizon has passed
             if open_trade is not None and i >= open_trade["close_at"]:
-                exit_price = float(feature_array[open_trade["close_at"], close_idx])
+                close_candle_time = df_sim.index[open_trade["close_at"]]
+                exit_time = close_candle_time + timedelta(minutes=1)
+                exit_price = get_price_at(symbol, exit_time)
+                if exit_price is None:
+
+                    exit_price = float(feature_array[open_trade["close_at"], close_idx])
                 if open_trade["direction"] == "LONG":
                     pnl = (exit_price - open_trade["entry"]) / open_trade["entry"] * 100
                 else:
                     pnl = (open_trade["entry"] - exit_price) / open_trade["entry"] * 100
                 pnl -= 0.1  # fee
-                pnl *= 5  # 5x leverage
+                pnl *= 20  # 5x leverage
                 pnl = max(pnl, -100)  # liquidation floor
-                balance *= (1 + pnl / 100)
+                balance += 20.0 * (pnl / 100)
 
                 trade_log["direction"].append(open_trade["direction"])
                 trade_log["entry"].append(round(open_trade["entry"], 4))
@@ -1002,9 +1007,13 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, paper_t
 
             if prediction != -1:
                 direction = "LONG" if prediction == 1 else "SHORT"
+                entry_time = candle_time + timedelta(minutes=1) ## assume worst case scenario we have wery slow trade execution
+                entry_price = get_price_at(symbol, entry_time)
+                if entry_price is None:
+                    entry_price = current_price
                 open_trade = {
                     "direction": direction,
-                    "entry": current_price,
+                    "entry": entry_price,
                     "close_at": i + horizon,
                     "opened": candle_time,
                 }
@@ -1014,7 +1023,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, paper_t
         pnls = trade_log["pnl"]
         if pnls:
             wins = sum(1 for p in pnls if p > 0)
-            trade_size = 10.0
+            trade_size = 20.0
             total_invested = trade_size * len(pnls)
             total_returned = sum(trade_size * (1 + p / 100) for p in pnls)
             total_profit = total_returned - total_invested
@@ -1022,7 +1031,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, paper_t
             trade_log["num_trades"] = len(pnls)
             trade_log["win_rate"] = round(wins / len(pnls) * 100, 2)
             trade_log["avg_pnl"] = round(sum(pnls) / len(pnls), 4)
-            trade_log["total_invested"] = round(total_invested, 2)
+            trade_log["total_invested"] = trade_size * len(pnls)
             trade_log["total_returned"] = round(total_returned, 2)
             trade_log["total_profit"] = round(total_profit, 2)
             trade_log["roi"] = round(total_profit / total_invested * 100, 2)

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Tuple, List, Optional
 import numpy as np
 import pandas as pd
+import torch
 from binance.client import Client
 from datetime import date, timedelta
 from sklearn.preprocessing import StandardScaler
@@ -36,6 +37,18 @@ def get_tradable_futures_symbols():
                 pass
 
     return symbols
+def get_price_at(symbol, dt):
+    """Get price at a specific datetime, minute accurate"""
+    ts = int(dt.timestamp() * 1000)
+    klines = client.get_historical_klines(
+        symbol,
+        Client.KLINE_INTERVAL_1MINUTE,
+        start_str=ts,
+        limit=1
+    )
+    if not klines:
+        return None
+    return float(klines[0][4])
 def download_data(symbol: str, months: int, interval: str = "1h",cutoff:int=0):
 
 
