@@ -10,7 +10,7 @@ import crypto
 import argparse
 import asyncio
 
-
+from crypto import paper_trade_historical
 
 if __name__ == "__main__":
     symbols = ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","LTCUSDT"]
@@ -27,11 +27,14 @@ if __name__ == "__main__":
     parser.add_argument("--backtest",action="store_true",help="backtesting")
     parser.add_argument("--cutoff",type=int,default=0,help="how many days ago  should there be data fetch cutoff")
     parser.add_argument("--symbol",type=str,default="BTCUSDT",help="pair to train on")
+    parser.add_argument("--paper_trade",action="store_true",help="Prediction mode")
 
     args = parser.parse_args()
     crypto.load_config()
     ##.connect()
     # crypto.api_up()
+    if args.paper_trade:
+        paper_trade_historical(months=args.months,window_days=args.window_days,resample_hours=args.resample_hours,horizon=args.horizon)
     if args.predict:
         crypto.eval_live(months=args.months,window_days=args.window_days,resample_hours=args.resample_hours,horizon=args.horizon)
     if args.data_fetch:

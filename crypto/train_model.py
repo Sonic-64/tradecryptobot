@@ -771,7 +771,6 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         if patience_counter >= patience:
             break
 
-    print(f"Model saved as {dataset_dir}/{SEED}_cnn_model.pt with accuracy: {best_acc:.2%}\n")
     mlp_model = MLPModel(
         input_size=input_size,
         k=12,
@@ -860,6 +859,188 @@ def eval_live(months,window_days,resample_hours,horizon):
     test_live(training_time,config, resample_hours, window_days,horizon)
 
 
+
+
+def paper_trade_historical(months, window_days, resample_hours, horizon, paper_trade_days=30, seed=42):
+    """
+    Train on data ending `paper_trade_days` ago, then simulate trading on the last `paper_trade_days`.
+
+    Timeline:
+    |-------- months of training data --------|-- paper_trade_days --|-- now
+                                           cutoff=paper_trade_days  cutoff=0
+    """
+    from .data_fetch import download_data, compute_features, build_windows, scale_live_window
+    from .tune import load_eval_results, get_best_results
+    import torch, joblib, json, numpy as np
+    from pathlib import Path
+    from datetime import datetime
+
+    symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "LTCUSDT"]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # ── 1. Train on data ending paper_trade_days ago ──────────────────────────
+    print(f"Training on data ending {paper_trade_days} days ago...")
+    for symbol in symbols:
+        make_dataset(
+            symbol=symbol,
+            months=months,
+            window_days=window_days,
+            resample_hours=resample_hours,
+            horizon=horizon,
+            step=1,
+            cutoff=paper_trade_days,  # <-- key: training ends paper_trade_days ago
+        )
+        time.sleep(1)
+
+    for symbol in symbols:
+        train_for_live(dataset_dir=f"{symbol}_{window_days}_{resample_hours}_{horizon}")
+
+    # ── 2. Load best configs ───────────────────────────────────────────────────
+    config = {}
+    symbol_models = {}
+    for symbol in symbols:
+        dataset_dir = f"{symbol}_{window_days}_{resample_hours}_{horizon}"
+        eval_results = load_eval_results(dataset_dir)
+        config[symbol] = get_best_results(eval_results["val"], get_acc=False)
+
+        # Load models
+        with open(f"{dataset_dir}/model_config.json") as f:
+            cfg = json.load(f)
+        with open(f"{dataset_dir}/cnn_model_config.json") as f:
+            cnn_cfg = json.load(f)
+
+        input_size = cfg["input_size"]
+        lstm = ImprovedLSTMModel(input_size=input_size, hidden_size=cfg["hidden_size"],
+                                 num_layers=cfg["num_layers"], dropout=cfg["dropout"]).to(device)
+        lstm.load_state_dict(torch.load(f"{dataset_dir}/{seed}_binary_model.pt", map_location=device))
+        lstm.eval()
+
+        cnn = CNNModel(input_size=input_size, num_filters=cnn_cfg["num_filters"],
+                       kernel_size=cnn_cfg["kernel_size"], dropout=cnn_cfg["dropout"]).to(device)
+        cnn.load_state_dict(torch.load(f"{dataset_dir}/{seed}_cnn_model.pt", map_location=device))
+        cnn.eval()
+
+        mlp = MLPModel(input_size=input_size, k=12).to(device)
+        mlp.load_state_dict(torch.load(f"{dataset_dir}/{seed}_mlp_model.pt", map_location=device))
+        mlp.eval()
+
+        symbol_models[symbol] = {
+            "lstm": lstm, "cnn": cnn, "mlp": mlp,
+            "lr": joblib.load(f"{dataset_dir}/{seed}_lr_model.pkl"),
+            "scaler": joblib.load(f"{dataset_dir}/scaler.pkl"),
+        }
+
+    # ── 3. Download last (paper_trade_days + window_days) of data for simulation ──
+    print(f"Simulating last {paper_trade_days} days...")
+    steps_per_day = 24 // resample_hours
+    window_size = window_days * steps_per_day
+
+    all_trade_logs = {}
+
+    for symbol in symbols:
+        print(f"\n--- {symbol} ---")
+        c = config[symbol]
+        m = symbol_models[symbol]
+
+        # Download enough data: window_days to fill first window + paper_trade_days to simulate
+        df_raw = download_data(symbol, months=2 + window_days // 30, cutoff=0)
+        df_feat, _ = compute_features(df_raw, resample_hours)
+
+        # Only keep candles from paper_trade_days ago onward (but need window_size before that too)
+        total_steps_needed = window_size + paper_trade_days * steps_per_day
+        df_sim = df_feat.iloc[-total_steps_needed:]
+
+        feature_array = df_sim.values.astype(np.float32)
+        close_idx = list(df_sim.columns).index('Close')
+
+        balance = 1000.0
+        open_trade = None
+        trade_log = {"direction": [], "entry": [], "exit": [], "pnl": [],
+                     "opened": [], "closed": []}
+
+        # Walk candle by candle starting after initial window
+        for i in range(window_size, len(feature_array) - horizon):
+            current_price = float(feature_array[i, close_idx])
+            candle_time = df_sim.index[i]
+
+            # Close trade if horizon has passed
+            if open_trade is not None and i >= open_trade["close_at"]:
+                exit_price = float(feature_array[open_trade["close_at"], close_idx])
+                if open_trade["direction"] == "LONG":
+                    pnl = (exit_price - open_trade["entry"]) / open_trade["entry"] * 100
+                else:
+                    pnl = (open_trade["entry"] - exit_price) / open_trade["entry"] * 100
+                pnl -= 0.1  # fee
+                pnl *= 5  # 5x leverage
+                pnl = max(pnl, -100)  # liquidation floor
+                balance *= (1 + pnl / 100)
+
+                trade_log["direction"].append(open_trade["direction"])
+                trade_log["entry"].append(round(open_trade["entry"], 4))
+                trade_log["exit"].append(round(exit_price, 4))
+                trade_log["pnl"].append(round(pnl, 4))
+                trade_log["opened"].append(str(open_trade["opened"]))
+                trade_log["closed"].append(str(df_sim.index[open_trade["close_at"]]))
+
+                print(
+                    f"  [{candle_time}] CLOSED {open_trade['direction']} @ {exit_price:.4f} | PnL: {pnl:+.2f}% | Balance: ${balance:.2f}")
+                open_trade = None
+
+            # Skip if trade already open
+            if open_trade is not None:
+                continue
+
+            # Scale window and predict
+            window = feature_array[i - window_size:i]
+            X_scaled = scale_live_window(window, m["scaler"])
+
+            prediction = conf_eval_live(
+                m["lstm"], m["cnn"], m["mlp"], m["lr"], X_scaled,
+                c["use_cnn"], c["use_lstm"], c["use_mlp"], c["use_lr"],
+                c["prop_threshold"], c["cnn_threshold"], c["mlp_threshold"], c["lr_threshold"]
+            )
+
+            if prediction != -1:
+                direction = "LONG" if prediction == 1 else "SHORT"
+                open_trade = {
+                    "direction": direction,
+                    "entry": current_price,
+                    "close_at": i + horizon,
+                    "opened": candle_time,
+                }
+                print(f"  [{candle_time}] OPENED {direction} @ {current_price:.4f}")
+
+        # Summary per symbol
+        pnls = trade_log["pnl"]
+        if pnls:
+            wins = sum(1 for p in pnls if p > 0)
+            trade_size = 10.0
+            total_invested = trade_size * len(pnls)
+            total_returned = sum(trade_size * (1 + p / 100) for p in pnls)
+            total_profit = total_returned - total_invested
+
+            trade_log["num_trades"] = len(pnls)
+            trade_log["win_rate"] = round(wins / len(pnls) * 100, 2)
+            trade_log["avg_pnl"] = round(sum(pnls) / len(pnls), 4)
+            trade_log["total_invested"] = round(total_invested, 2)
+            trade_log["total_returned"] = round(total_returned, 2)
+            trade_log["total_profit"] = round(total_profit, 2)
+            trade_log["roi"] = round(total_profit / total_invested * 100, 2)
+            trade_log["final_balance"] = round(balance, 2)
+
+            print(f"\n  {symbol} Summary:")
+            print(f"  Trades: {len(pnls)} | Win rate: {trade_log['win_rate']}% | Avg PnL: {trade_log['avg_pnl']}%")
+            print(f"  ROI: {trade_log['roi']}% | Final balance: ${balance:.2f}")
+        else:
+            print(f"  No trades taken for {symbol}")
+
+        all_trade_logs[symbol] = trade_log
+
+    # Save results
+    with open("paper_trade_historical.json", "w") as f:
+        json.dump(all_trade_logs, f, indent=2)
+    print("\nSaved to paper_trade_historical.json")
+    return all_trade_logs
 def test_live(training_time,config,resample_hours,window_days,horizon):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "LTCUSDT"]
