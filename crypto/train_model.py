@@ -150,7 +150,7 @@ def conf_eval(model,cnn_model,mlp_model,lr_model,loader,use_cnn=True,use_lstm=Tr
             prob_up = prob_up.cpu().numpy().flatten()
             prop_cnn = prop_cnn.cpu().numpy().flatten()
             prop_mlp = prop_mlp.cpu().numpy().flatten()
-            X_np = xb[:, -12:, :].numpy().reshape(len(xb), -1)
+            X_np = xb[:, -16:, :].numpy().reshape(len(xb), -1)
             prop_lr = lr_model.predict_proba(X_np)[:, 1]
             y_class = y_class.cpu().numpy().flatten()
             last_candle = xb[:, -1, :].cpu().numpy()
@@ -239,7 +239,7 @@ def conf_eval_live(model,cnn_model,mlp_model,lr_model,xb,use_cnn=True,use_lstm=T
         prob_up = prob_up.cpu().numpy().flatten()
         prop_cnn = prop_cnn.cpu().numpy().flatten()
         prop_mlp = prop_mlp.cpu().numpy().flatten()
-        X_np = xb[:, -12:, :].numpy().reshape(len(xb), -1)
+        X_np = xb[:, -16:, :].numpy().reshape(len(xb), -1)
         prop_lr = lr_model.predict_proba(X_np)[:, 1]
         last_candle = xb[:, -1, :].cpu().numpy()
             # Zapisz wszystko
@@ -445,13 +445,13 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     cnn_model = CNNModel(
         input_size=input_size,
         num_filters=32,
-        kernel_size=2,
+        kernel_size=4,
         dropout=0.5,
     ).to(device)
     cnn_model_config = {
         "input_size": input_size,
         "num_filters": 32,  # Increased
-        "kernel_size": 2,  # Increased
+        "kernel_size": 4,  # Increased
         "dropout": 0.5,  # Increased
     }
     with open(f"{dataset_dir}/cnn_model_config.json", "w") as f:
@@ -479,7 +479,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     print(f"Model saved as {dataset_dir}/{SEED}_cnn_model.pt with accuracy: {best_acc:.2%}\n")
     mlp_model = MLPModel(
         input_size=input_size,
-        k=12,
+        k=16,
         hidden_size=32,
         dropout=0.5
     ).to(device)
@@ -517,9 +517,9 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     except ValueError:
         print("Warning: 'Close' not found in features, using index 3 as fallback")
         close_idx = 3
-    X_lr = X_raw[:split_end, -12:, :].reshape(split_end, -1)
+    X_lr = X_raw[:split_end, -16:, :].reshape(split_end, -1)
     Nx = len(X_lr)
-    X_lr = scaler.transform(X_lr.reshape(-1, F)).reshape(Nx, 12, F)
+    X_lr = scaler.transform(X_lr.reshape(-1, F)).reshape(Nx, 16, F)
     X_lr = X_lr.reshape(Nx, -1)
     y_lr = (y_raw[:split_end] > X_raw[:split_end, -1, close_idx]).astype(int)  # same binary label logic
 
@@ -599,7 +599,7 @@ def check_if_good_for_prediction(resample_hours=6, max_minutes_after=15):
         return False
 
     return True
-def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
+def train_for_live(dataset_dir,resample_hours = 4,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     random.seed(SEED)
     np.random.seed(SEED)
     torch.manual_seed(SEED)
@@ -740,13 +740,13 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     cnn_model = CNNModel(
         input_size=input_size,
         num_filters=32,
-        kernel_size=2,
+        kernel_size=4,
         dropout=0.5,
     ).to(device)
     cnn_model_config = {
         "input_size": input_size,
         "num_filters": 32,  # Increased
-        "kernel_size": 2,  # Increased
+        "kernel_size": 4,  # Increased
         "dropout": 0.5,  # Increased
     }
     with open(f"{dataset_dir}/cnn_model_config.json", "w") as f:
@@ -773,7 +773,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     mlp_model = MLPModel(
         input_size=input_size,
-        k=12,
+        k=16,
         hidden_size=32,
         dropout=0.5
     ).to(device)
@@ -811,9 +811,9 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     except ValueError:
         print("Warning: 'Close' not found in features, using index 3 as fallback")
         close_idx = 3
-    X_lr = X_raw[:split_end, -12:, :].reshape(split_end, -1)
+    X_lr = X_raw[:split_end, -16:, :].reshape(split_end, -1)
     Nx = len(X_lr)
-    X_lr = scaler.transform(X_lr.reshape(-1, F)).reshape(Nx, 12, F)
+    X_lr = scaler.transform(X_lr.reshape(-1, F)).reshape(Nx, 16, F)
     X_lr = X_lr.reshape(Nx, -1)
     y_lr = (y_raw[:split_end] > X_raw[:split_end, -1, close_idx]).astype(int)  # same binary label logic
 
@@ -1007,7 +1007,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, paper_t
 
             if prediction != -1:
                 direction = "LONG" if prediction == 1 else "SHORT"
-                entry_time = candle_time + timedelta(minutes=1) ## assume worst case scenario we have wery slow trade execution
+                entry_time = candle_time + timedelta(minutes=1) ## assume worst case scenario we have wery slow trade executiongi
                 entry_price = get_price_at(symbol, entry_time)
                 if entry_price is None:
                     entry_price = current_price

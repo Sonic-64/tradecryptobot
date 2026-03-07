@@ -19,8 +19,8 @@ if __name__ == "__main__":
     parser.add_argument("--train", action="store_true", help="Training mode")
     parser.add_argument("--predict", action="store_true", help="Prediction mode")
     parser.add_argument("--window_days", type=int, default=28, help="Number of past days in each training window")
-    parser.add_argument("--horizon", type=int, default=3, help="Number of resampled steps ahead to predict")
-    parser.add_argument("--resample_hours", type=int, default=4, help="Resampling interval in hours")
+    parser.add_argument("--horizon", type=int, default=4, help="Number of resampled steps ahead to predict")
+    parser.add_argument("--resample_hours", type=int, default=3, help="Resampling interval in hours")
     parser.add_argument("--months", type=int, default=18, help="Number of past months to fetch (-1 for full history)")
     parser.add_argument("--step", type=int, default=1, help="Stride between sliding windows")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
@@ -104,7 +104,7 @@ if __name__ == "__main__":
                     EPOCHS=args.epochs)
 
 
-                i += 30
+                i += 40
 
             else:
 

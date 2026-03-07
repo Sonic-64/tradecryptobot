@@ -180,9 +180,9 @@ class CNNModel(nn.Module):
         # x: (B, T, F)
 
         # Optionally slice to most recent N steps
-        # e.g. cnn_window_steps=42 → last 7 days of 4h candles
+        # e.g. cnn_window_steps=56 → last 7 days of 3h candles
 
-        x = x[:, -42:, :]   # (B, N, F)
+        x = x[:, -56:, :]   # (B, N, F)
 
         # Project features: (B, T, F) → (B, T, C)
         x = self.input_proj(x)

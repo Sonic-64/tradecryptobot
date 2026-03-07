@@ -19,12 +19,12 @@ def _compute_score(accuracy_pct, num_trades):
     """
     if accuracy_pct is None or num_trades is None or num_trades == 0:
         return None
-    base = (2 * accuracy_pct - 0.04)
+    base = (2 * accuracy_pct - 0.1)
     if base <= 0:
         return None
-    accuracy_weight = 1.2
+    accuracy_weight = 1.0
     acc = accuracy_pct/100
-    return round(math.log(2*acc - 0.04) * num_trades ** (1/accuracy_weight), 6)
+    return round(math.log(2*acc - 0.1) * num_trades ** (1/accuracy_weight), 6)
 def load_eval_results(dataset_dir):
     path = Path(dataset_dir) / "eval_results.json"
     if not path.exists():
