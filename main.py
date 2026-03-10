@@ -10,7 +10,7 @@ import crypto
 import argparse
 import asyncio
 
-from crypto import paper_trade_historical
+
 
 if __name__ == "__main__":
     symbols = ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","LTCUSDT"]
@@ -18,23 +18,24 @@ if __name__ == "__main__":
     parser.add_argument("--data_fetch", action="store_true", help="fetching data")
     parser.add_argument("--train", action="store_true", help="Training mode")
     parser.add_argument("--predict", action="store_true", help="Prediction mode")
-    parser.add_argument("--window_days", type=int, default=28, help="Number of past days in each training window")
+    parser.add_argument("--window_days", type=int, default=7, help="Number of past days in each training window")
     parser.add_argument("--horizon", type=int, default=4, help="Number of resampled steps ahead to predict")
     parser.add_argument("--resample_hours", type=int, default=3, help="Resampling interval in hours")
     parser.add_argument("--months", type=int, default=18, help="Number of past months to fetch (-1 for full history)")
     parser.add_argument("--step", type=int, default=1, help="Stride between sliding windows")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
+    parser.add_argument("--get_best_config",action="store_true",help="find best eval config based on multiple periods")
     parser.add_argument("--backtest",action="store_true",help="backtesting")
     parser.add_argument("--cutoff",type=int,default=0,help="how many days ago  should there be data fetch cutoff")
     parser.add_argument("--symbol",type=str,default="BTCUSDT",help="pair to train on")
     parser.add_argument("--paper_trade",action="store_true",help="Prediction mode")
+    parser.add_argument("--trend_follow_backtest", action="store_true", help="Run trend following paper trade backtest")
 
     args = parser.parse_args()
     crypto.load_config()
     ##.connect()
     # crypto.api_up()
-    if args.paper_trade:
-        paper_trade_historical(months=args.months,window_days=args.window_days,resample_hours=args.resample_hours,horizon=args.horizon)
+
     if args.predict:
         crypto.eval_live(months=args.months,window_days=args.window_days,resample_hours=args.resample_hours,horizon=args.horizon)
     if args.data_fetch:
@@ -75,19 +76,18 @@ if __name__ == "__main__":
                 _,_,_,_ = crypto.Train_val(dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}",
                                 EPOCHS=args.epochs)
 
-
-    if args.backtest:
+    if args.get_best_config:
         i = 0
         for symbol in symbols:
-           filename = f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}/eval_results.json"
-           if os.path.exists(filename):
-               os.remove(filename)
+            filename = f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}/eval_results.json"
+            if os.path.exists(filename):
+                os.remove(filename)
 
         while i < 365:
-            if args.symbol != "all":
 
+            for symbol in symbols:
                 crypto.make_dataset(
-                    symbol=args.symbol,
+                    symbol=symbol,
                     # Defaulting to BTC-USD as per original intent or make it an arg? Adding symbol arg would be good too but sticking to requested ones first.
                     months=args.months,
                     window_days=args.window_days,
@@ -98,36 +98,24 @@ if __name__ == "__main__":
                 )
                 time.sleep(1)
 
-
-                _,_,_,_ = crypto.Train_val(
-                    dataset_dir=f"{args.symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}",
+            for symbol in symbols:
+                _, _, _, _ = crypto.Train_val(
+                    dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}",
                     EPOCHS=args.epochs)
 
+            i += 40
+    if args.backtest:
 
-                i += 40
+            i = 0
 
-            else:
+            while i < 60:
+                crypto.paper_trade_historical(months=args.months, window_days=args.window_days, resample_hours=args.resample_hours,
+                               horizon=args.horizon, cutoff=i)
+                i+=10
 
-                for symbol in symbols:
-                    crypto.make_dataset(
-                        symbol=symbol,
-                            # Defaulting to BTC-USD as per original intent or make it an arg? Adding symbol arg would be good too but sticking to requested ones first.
-                        months=args.months,
-                        window_days=args.window_days,
-                        resample_hours=args.resample_hours,
-                        horizon=args.horizon,
-                        step=args.step,
-                        cutoff=i
-                    )
-                    time.sleep(1)
-
-                for symbol in symbols:
-                    _,_,_,_ = crypto.Train_val(
-                        dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}",
-                        EPOCHS=args.epochs)
-
-
-                i += 30
-
-
-
+    if args.trend_follow_backtest:
+        i = 0
+        while i < 60:
+            crypto.trend_follow_paper_trade(months=args.months, window_days=args.window_days,
+                                            resample_hours=args.resample_hours, horizon=args.horizon, cutoff=i)
+            i += 10

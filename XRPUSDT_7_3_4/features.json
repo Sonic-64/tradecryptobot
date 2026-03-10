@@ -1,0 +1,18 @@
+[
+  "High",
+  "Low",
+  "Close",
+  "Volume",
+  "Number of Trades",
+  "volume_zscore",
+  "pct_change",
+  "time_local_High",
+  "time_local_Low",
+  "volatility_ratio",
+  "taker_buy_ratio",
+  "MACD",
+  "RSI",
+  "hour",
+  "bb_position",
+  "bb_width"
+]
