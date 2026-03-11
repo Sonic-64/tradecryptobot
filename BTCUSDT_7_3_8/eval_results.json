@@ -1,0 +1,2859 @@
+{
+  "symbol": "BTCUSDT_7_3_8",
+  "test": [],
+  "val": [
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        59.15,
+        45.71
+      ],
+      "accuracy_avg": 52.43,
+      "accuracy_avg_weighted": 50.23,
+      "score": -21.155371,
+      "num_trades": [
+        71,
+        140
+      ],
+      "coverage_pct": [
+        27.52,
+        54.26
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        61.54,
+        47.15
+      ],
+      "accuracy_avg": 54.34,
+      "accuracy_avg_weighted": 52.13,
+      "score": -11.113294,
+      "num_trades": [
+        65,
+        123
+      ],
+      "coverage_pct": [
+        25.19,
+        47.67
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        63.33,
+        50.5
+      ],
+      "accuracy_avg": 56.91,
+      "accuracy_avg_weighted": 55.28,
+      "score": 0.899085,
+      "num_trades": [
+        60,
+        101
+      ],
+      "coverage_pct": [
+        23.26,
+        39.15
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        64.29,
+        51.32
+      ],
+      "accuracy_avg": 57.81,
+      "accuracy_avg_weighted": 56.82,
+      "score": 4.719418,
+      "num_trades": [
+        56,
+        76
+      ],
+      "coverage_pct": [
+        21.71,
+        29.46
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        60.47,
+        50.54
+      ],
+      "accuracy_avg": 55.5,
+      "accuracy_avg_weighted": 53.68,
+      "score": -3.638644,
+      "num_trades": [
+        43,
+        93
+      ],
+      "coverage_pct": [
+        16.67,
+        36.05
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        63.41,
+        52.94
+      ],
+      "accuracy_avg": 58.17,
+      "accuracy_avg_weighted": 56.35,
+      "score": 3.356883,
+      "num_trades": [
+        41,
+        85
+      ],
+      "coverage_pct": [
+        15.89,
+        32.95
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        66.67,
+        55.41
+      ],
+      "accuracy_avg": 61.04,
+      "accuracy_avg_weighted": 59.3,
+      "score": 9.322638,
+      "num_trades": [
+        39,
+        74
+      ],
+      "coverage_pct": [
+        15.12,
+        28.68
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        67.57,
+        54.39
+      ],
+      "accuracy_avg": 60.98,
+      "accuracy_avg_weighted": 59.58,
+      "score": 8.238584,
+      "num_trades": [
+        37,
+        57
+      ],
+      "coverage_pct": [
+        14.34,
+        22.09
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        63.64,
+        47.5
+      ],
+      "accuracy_avg": 55.57,
+      "accuracy_avg_weighted": 53.23,
+      "score": -2.23459,
+      "num_trades": [
+        22,
+        40
+      ],
+      "coverage_pct": [
+        8.53,
+        15.5
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        66.67,
+        47.37
+      ],
+      "accuracy_avg": 57.02,
+      "accuracy_avg_weighted": 54.24,
+      "score": -0.903686,
+      "num_trades": [
+        21,
+        38
+      ],
+      "coverage_pct": [
+        8.14,
+        14.73
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        70.0,
+        48.65
+      ],
+      "accuracy_avg": 59.33,
+      "accuracy_avg_weighted": 56.14,
+      "score": 1.285006,
+      "num_trades": [
+        20,
+        37
+      ],
+      "coverage_pct": [
+        7.75,
+        14.34
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        70.0,
+        45.16
+      ],
+      "accuracy_avg": 57.58,
+      "accuracy_avg_weighted": 54.9,
+      "score": -0.102102,
+      "num_trades": [
+        20,
+        31
+      ],
+      "coverage_pct": [
+        7.75,
+        12.02
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        60.0,
+        37.5
+      ],
+      "accuracy_avg": 48.75,
+      "accuracy_avg_weighted": 50.0,
+      "score": -1.896489,
+      "num_trades": [
+        10,
+        8
+      ],
+      "coverage_pct": [
+        3.88,
+        3.1
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        60.0,
+        37.5
+      ],
+      "accuracy_avg": 48.75,
+      "accuracy_avg_weighted": 50.0,
+      "score": -1.896489,
+      "num_trades": [
+        10,
+        8
+      ],
+      "coverage_pct": [
+        3.88,
+        3.1
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        60.0,
+        37.5
+      ],
+      "accuracy_avg": 48.75,
+      "accuracy_avg_weighted": 50.0,
+      "score": -1.896489,
+      "num_trades": [
+        10,
+        8
+      ],
+      "coverage_pct": [
+        3.88,
+        3.1
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        60.0,
+        28.57
+      ],
+      "accuracy_avg": 44.28,
+      "accuracy_avg_weighted": 47.06,
+      "score": -2.939739,
+      "num_trades": [
+        10,
+        7
+      ],
+      "coverage_pct": [
+        3.88,
+        2.71
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        31.52
+      ],
+      "accuracy_avg": 31.52,
+      "accuracy_avg_weighted": 31.52,
+      "score": -58.339393,
+      "num_trades": [
+        0,
+        92
+      ],
+      "coverage_pct": [
+        0.0,
+        35.66
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        34.57
+      ],
+      "accuracy_avg": 34.57,
+      "accuracy_avg_weighted": 34.57,
+      "score": -42.546276,
+      "num_trades": [
+        0,
+        81
+      ],
+      "coverage_pct": [
+        0.0,
+        31.4
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        40.3
+      ],
+      "accuracy_avg": 40.3,
+      "accuracy_avg_weighted": 40.3,
+      "score": -23.325383,
+      "num_trades": [
+        0,
+        67
+      ],
+      "coverage_pct": [
+        0.0,
+        25.97
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        42.86
+      ],
+      "accuracy_avg": 42.86,
+      "accuracy_avg_weighted": 42.86,
+      "score": -13.628265,
+      "num_trades": [
+        0,
+        49
+      ],
+      "coverage_pct": [
+        0.0,
+        18.99
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        37.29
+      ],
+      "accuracy_avg": 37.29,
+      "accuracy_avg_weighted": 37.29,
+      "score": -25.79866,
+      "num_trades": [
+        0,
+        59
+      ],
+      "coverage_pct": [
+        0.0,
+        22.87
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        40.74
+      ],
+      "accuracy_avg": 40.74,
+      "accuracy_avg_weighted": 40.74,
+      "score": -18.130635,
+      "num_trades": [
+        0,
+        54
+      ],
+      "coverage_pct": [
+        0.0,
+        20.93
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        44.68
+      ],
+      "accuracy_avg": 44.68,
+      "accuracy_avg_weighted": 44.68,
+      "score": -10.865259,
+      "num_trades": [
+        0,
+        47
+      ],
+      "coverage_pct": [
+        0.0,
+        18.22
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        47.22
+      ],
+      "accuracy_avg": 47.22,
+      "accuracy_avg_weighted": 47.22,
+      "score": -6.088643,
+      "num_trades": [
+        0,
+        36
+      ],
+      "coverage_pct": [
+        0.0,
+        13.95
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        44.0
+      ],
+      "accuracy_avg": 44.0,
+      "accuracy_avg_weighted": 44.0,
+      "score": -6.211534,
+      "num_trades": [
+        0,
+        25
+      ],
+      "coverage_pct": [
+        0.0,
+        9.69
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        45.83
+      ],
+      "accuracy_avg": 45.83,
+      "accuracy_avg_weighted": 45.83,
+      "score": -4.862542,
+      "num_trades": [
+        0,
+        24
+      ],
+      "coverage_pct": [
+        0.0,
+        9.3
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        47.83
+      ],
+      "accuracy_avg": 47.83,
+      "accuracy_avg_weighted": 47.83,
+      "score": -3.560037,
+      "num_trades": [
+        0,
+        23
+      ],
+      "coverage_pct": [
+        0.0,
+        8.91
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        47.37
+      ],
+      "accuracy_avg": 47.37,
+      "accuracy_avg_weighted": 47.37,
+      "score": -3.146066,
+      "num_trades": [
+        0,
+        19
+      ],
+      "coverage_pct": [
+        0.0,
+        7.36
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        40.0
+      ],
+      "accuracy_avg": 40.0,
+      "accuracy_avg_weighted": 40.0,
+      "score": -1.783375,
+      "num_trades": [
+        0,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        1.94
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        40.0
+      ],
+      "accuracy_avg": 40.0,
+      "accuracy_avg_weighted": 40.0,
+      "score": -1.783375,
+      "num_trades": [
+        0,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        1.94
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        40.0
+      ],
+      "accuracy_avg": 40.0,
+      "accuracy_avg_weighted": 40.0,
+      "score": -1.783375,
+      "num_trades": [
+        0,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        1.94
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        25.0
+      ],
+      "accuracy_avg": 25.0,
+      "accuracy_avg_weighted": 25.0,
+      "score": -3.665163,
+      "num_trades": [
+        0,
+        4
+      ],
+      "coverage_pct": [
+        0.0,
+        1.55
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        60.0
+      ],
+      "accuracy_avg": 60.0,
+      "accuracy_avg_weighted": 60.0,
+      "score": 0.476551,
+      "num_trades": [
+        0,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        1.94
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        60.0
+      ],
+      "accuracy_avg": 60.0,
+      "accuracy_avg_weighted": 60.0,
+      "score": 0.476551,
+      "num_trades": [
+        0,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        1.94
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        100.0
+      ],
+      "accuracy_avg": 100.0,
+      "accuracy_avg_weighted": 100.0,
+      "score": 1.925562,
+      "num_trades": [
+        0,
+        3
+      ],
+      "coverage_pct": [
+        0.0,
+        1.16
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        50.0
+      ],
+      "accuracy_avg": 50.0,
+      "accuracy_avg_weighted": 50.0,
+      "score": -0.210721,
+      "num_trades": [
+        0,
+        2
+      ],
+      "coverage_pct": [
+        0.0,
+        0.78
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        50.0
+      ],
+      "accuracy_avg": 50.0,
+      "accuracy_avg_weighted": 50.0,
+      "score": -0.210721,
+      "num_trades": [
+        0,
+        2
+      ],
+      "coverage_pct": [
+        0.0,
+        0.78
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        100.0
+      ],
+      "accuracy_avg": 100.0,
+      "accuracy_avg_weighted": 100.0,
+      "score": 0.641854,
+      "num_trades": [
+        0,
+        1
+      ],
+      "coverage_pct": [
+        0.0,
+        0.39
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        48.03,
+        41.76
+      ],
+      "accuracy_avg": 44.89,
+      "accuracy_avg_weighted": 44.44,
+      "score": -70.461015,
+      "num_trades": [
+        127,
+        170
+      ],
+      "coverage_pct": [
+        49.22,
+        65.89
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        52.11,
+        47.66
+      ],
+      "accuracy_avg": 49.88,
+      "accuracy_avg_weighted": 49.44,
+      "score": -20.983181,
+      "num_trades": [
+        71,
+        107
+      ],
+      "coverage_pct": [
+        27.52,
+        41.47
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        53.57,
+        44.44
+      ],
+      "accuracy_avg": 49.0,
+      "accuracy_avg_weighted": 47.94,
+      "score": -11.112003,
+      "num_trades": [
+        28,
+        45
+      ],
+      "coverage_pct": [
+        10.85,
+        17.44
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        58.33,
+        44.44
+      ],
+      "accuracy_avg": 51.38,
+      "accuracy_avg_weighted": 52.38,
+      "score": -1.130279,
+      "num_trades": [
+        12,
+        9
+      ],
+      "coverage_pct": [
+        4.65,
+        3.49
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        32.32
+      ],
+      "accuracy_avg": 32.32,
+      "accuracy_avg_weighted": 32.32,
+      "score": -59.835993,
+      "num_trades": [
+        0,
+        99
+      ],
+      "coverage_pct": [
+        0.0,
+        38.37
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        37.5
+      ],
+      "accuracy_avg": 37.5,
+      "accuracy_avg_weighted": 37.5,
+      "score": -27.570107,
+      "num_trades": [
+        0,
+        64
+      ],
+      "coverage_pct": [
+        0.0,
+        24.81
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        44.0
+      ],
+      "accuracy_avg": 44.0,
+      "accuracy_avg_weighted": 44.0,
+      "score": -6.211534,
+      "num_trades": [
+        0,
+        25
+      ],
+      "coverage_pct": [
+        0.0,
+        9.69
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        40.0
+      ],
+      "accuracy_avg": 40.0,
+      "accuracy_avg_weighted": 40.0,
+      "score": -1.783375,
+      "num_trades": [
+        0,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        1.94
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        60.0
+      ],
+      "accuracy_avg": 60.0,
+      "accuracy_avg_weighted": 60.0,
+      "score": 0.476551,
+      "num_trades": [
+        0,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        1.94
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        50.0
+      ],
+      "accuracy_avg": 50.0,
+      "accuracy_avg_weighted": 50.0,
+      "score": -0.210721,
+      "num_trades": [
+        0,
+        2
+      ],
+      "coverage_pct": [
+        0.0,
+        0.78
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        56.48,
+        43.86
+      ],
+      "accuracy_avg": 50.17,
+      "accuracy_avg_weighted": 48.75,
+      "score": -37.255259,
+      "num_trades": [
+        108,
+        171
+      ],
+      "coverage_pct": [
+        41.86,
+        66.28
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        59.38,
+        45.39
+      ],
+      "accuracy_avg": 52.39,
+      "accuracy_avg_weighted": 50.81,
+      "score": -21.705108,
+      "num_trades": [
+        96,
+        152
+      ],
+      "coverage_pct": [
+        37.21,
+        58.91
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        61.36,
+        50.0
+      ],
+      "accuracy_avg": 55.68,
+      "accuracy_avg_weighted": 54.9,
+      "score": -0.408409,
+      "num_trades": [
+        88,
+        116
+      ],
+      "coverage_pct": [
+        34.11,
+        44.96
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        66.22,
+        48.28
+      ],
+      "accuracy_avg": 57.25,
+      "accuracy_avg_weighted": 56.53,
+      "score": 4.852726,
+      "num_trades": [
+        74,
+        87
+      ],
+      "coverage_pct": [
+        28.68,
+        33.72
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        30.09
+      ],
+      "accuracy_avg": 30.09,
+      "accuracy_avg_weighted": 30.09,
+      "score": -77.919562,
+      "num_trades": [
+        0,
+        113
+      ],
+      "coverage_pct": [
+        0.0,
+        43.8
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.55,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        33.0
+      ],
+      "accuracy_avg": 33.0,
+      "accuracy_avg_weighted": 33.0,
+      "score": -57.98185,
+      "num_trades": [
+        0,
+        100
+      ],
+      "coverage_pct": [
+        0.0,
+        38.76
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.55,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        39.47
+      ],
+      "accuracy_avg": 39.47,
+      "accuracy_avg_weighted": 39.47,
+      "score": -28.266955,
+      "num_trades": [
+        0,
+        76
+      ],
+      "coverage_pct": [
+        0.0,
+        29.46
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.55,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        39.29
+      ],
+      "accuracy_avg": 39.29,
+      "accuracy_avg_weighted": 39.29,
+      "score": -21.121477,
+      "num_trades": [
+        0,
+        56
+      ],
+      "coverage_pct": [
+        0.0,
+        21.71
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        60.0
+      ],
+      "accuracy_avg": 60.0,
+      "accuracy_avg_weighted": 60.0,
+      "score": 0.476551,
+      "num_trades": [
+        0,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        1.94
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.6,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        60.0
+      ],
+      "accuracy_avg": 60.0,
+      "accuracy_avg_weighted": 60.0,
+      "score": 0.476551,
+      "num_trades": [
+        0,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        1.94
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.6,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        100.0
+      ],
+      "accuracy_avg": 100.0,
+      "accuracy_avg_weighted": 100.0,
+      "score": 1.925562,
+      "num_trades": [
+        0,
+        3
+      ],
+      "coverage_pct": [
+        0.0,
+        1.16
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.6,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.65,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.65,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.65,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": false,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        44.19,
+        41.09
+      ],
+      "accuracy_avg": 42.64,
+      "accuracy_avg_weighted": 42.64,
+      "score": -146.521136,
+      "num_trades": [
+        258,
+        258
+      ],
+      "coverage_pct": [
+        100.0,
+        100.0
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": false,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        28.46
+      ],
+      "accuracy_avg": 28.46,
+      "accuracy_avg_weighted": 28.46,
+      "score": -98.374401,
+      "num_trades": [
+        0,
+        130
+      ],
+      "coverage_pct": [
+        0.0,
+        50.39
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": false,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        60.0
+      ],
+      "accuracy_avg": 60.0,
+      "accuracy_avg_weighted": 60.0,
+      "score": 0.476551,
+      "num_trades": [
+        0,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        1.94
+      ]
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "use_lr": false,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        null,
+        null
+      ],
+      "accuracy_avg": null,
+      "accuracy_avg_weighted": null,
+      "score": null,
+      "num_trades": [
+        0,
+        0
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        61.82,
+        49.24
+      ],
+      "accuracy_avg": 55.53,
+      "accuracy_avg_weighted": 54.97,
+      "score": -0.217265,
+      "num_trades": [
+        165,
+        197
+      ],
+      "coverage_pct": [
+        63.95,
+        76.36
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        64.94,
+        49.71
+      ],
+      "accuracy_avg": 57.33,
+      "accuracy_avg_weighted": 56.88,
+      "score": 12.069686,
+      "num_trades": [
+        154,
+        173
+      ],
+      "coverage_pct": [
+        59.69,
+        67.05
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        67.63,
+        52.08
+      ],
+      "accuracy_avg": 59.85,
+      "accuracy_avg_weighted": 59.72,
+      "score": 25.528374,
+      "num_trades": [
+        139,
+        144
+      ],
+      "coverage_pct": [
+        53.88,
+        55.81
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        69.17,
+        51.75
+      ],
+      "accuracy_avg": 60.46,
+      "accuracy_avg_weighted": 60.68,
+      "score": 25.177934,
+      "num_trades": [
+        120,
+        114
+      ],
+      "coverage_pct": [
+        46.51,
+        44.19
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        62.24,
+        52.0
+      ],
+      "accuracy_avg": 57.12,
+      "accuracy_avg_weighted": 56.5,
+      "score": 6.591613,
+      "num_trades": [
+        98,
+        125
+      ],
+      "coverage_pct": [
+        37.98,
+        48.45
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        64.89,
+        53.98
+      ],
+      "accuracy_avg": 59.44,
+      "accuracy_avg_weighted": 58.93,
+      "score": 15.662428,
+      "num_trades": [
+        94,
+        113
+      ],
+      "coverage_pct": [
+        36.43,
+        43.8
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        67.42,
+        56.0
+      ],
+      "accuracy_avg": 61.71,
+      "accuracy_avg_weighted": 61.38,
+      "score": 22.69729,
+      "num_trades": [
+        89,
+        100
+      ],
+      "coverage_pct": [
+        34.5,
+        38.76
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        68.35,
+        54.88
+      ],
+      "accuracy_avg": 61.61,
+      "accuracy_avg_weighted": 61.49,
+      "score": 19.648541,
+      "num_trades": [
+        79,
+        82
+      ],
+      "coverage_pct": [
+        30.62,
+        31.78
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        64.29,
+        49.15
+      ],
+      "accuracy_avg": 56.72,
+      "accuracy_avg_weighted": 55.45,
+      "score": 0.904934,
+      "num_trades": [
+        42,
+        59
+      ],
+      "coverage_pct": [
+        16.28,
+        22.87
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        65.85,
+        50.0
+      ],
+      "accuracy_avg": 57.92,
+      "accuracy_avg_weighted": 56.84,
+      "score": 3.433209,
+      "num_trades": [
+        41,
+        54
+      ],
+      "coverage_pct": [
+        15.89,
+        20.93
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        67.5,
+        51.92
+      ],
+      "accuracy_avg": 59.71,
+      "accuracy_avg_weighted": 58.69,
+      "score": 6.550746,
+      "num_trades": [
+        40,
+        52
+      ],
+      "coverage_pct": [
+        15.5,
+        20.16
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        65.79,
+        48.89
+      ],
+      "accuracy_avg": 57.34,
+      "accuracy_avg_weighted": 56.63,
+      "score": 2.662631,
+      "num_trades": [
+        38,
+        45
+      ],
+      "coverage_pct": [
+        14.73,
+        17.44
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        50.0,
+        45.45
+      ],
+      "accuracy_avg": 47.73,
+      "accuracy_avg_weighted": 48.0,
+      "score": -3.770572,
+      "num_trades": [
+        14,
+        11
+      ],
+      "coverage_pct": [
+        5.43,
+        4.26
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        50.0,
+        45.45
+      ],
+      "accuracy_avg": 47.73,
+      "accuracy_avg_weighted": 48.0,
+      "score": -3.770572,
+      "num_trades": [
+        14,
+        11
+      ],
+      "coverage_pct": [
+        5.43,
+        4.26
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        50.0,
+        45.45
+      ],
+      "accuracy_avg": 47.73,
+      "accuracy_avg_weighted": 48.0,
+      "score": -3.770572,
+      "num_trades": [
+        14,
+        11
+      ],
+      "coverage_pct": [
+        5.43,
+        4.26
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        50.0,
+        40.0
+      ],
+      "accuracy_avg": 45.0,
+      "accuracy_avg_weighted": 45.83,
+      "score": -4.862542,
+      "num_trades": [
+        14,
+        10
+      ],
+      "coverage_pct": [
+        5.43,
+        3.88
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        53.88,
+        48.06
+      ],
+      "accuracy_avg": 50.97,
+      "accuracy_avg_weighted": 50.97,
+      "score": -43.361542,
+      "num_trades": [
+        258,
+        258
+      ],
+      "coverage_pct": [
+        100.0,
+        100.0
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.55,
+      "accuracy": [
+        57.14,
+        51.35
+      ],
+      "accuracy_avg": 54.25,
+      "accuracy_avg_weighted": 54.16,
+      "score": -4.879504,
+      "num_trades": [
+        140,
+        148
+      ],
+      "coverage_pct": [
+        54.26,
+        57.36
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.6,
+      "accuracy": [
+        58.33,
+        46.97
+      ],
+      "accuracy_avg": 52.65,
+      "accuracy_avg_weighted": 51.75,
+      "score": -7.661797,
+      "num_trades": [
+        48,
+        66
+      ],
+      "coverage_pct": [
+        18.6,
+        25.58
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": false,
+      "use_lr": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.65,
+      "accuracy": [
+        50.0,
+        50.0
+      ],
+      "accuracy_avg": 50.0,
+      "accuracy_avg_weighted": 50.0,
+      "score": -2.950094,
+      "num_trades": [
+        16,
+        12
+      ],
+      "coverage_pct": [
+        6.2,
+        4.65
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        61.24,
+        50.78
+      ],
+      "accuracy_avg": 56.01,
+      "accuracy_avg_weighted": 56.01,
+      "score": 10.319322,
+      "num_trades": [
+        258,
+        258
+      ],
+      "coverage_pct": [
+        100.0,
+        100.0
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        64.22,
+        50.0
+      ],
+      "accuracy_avg": 57.11,
+      "accuracy_avg_weighted": 57.3,
+      "score": 20.327961,
+      "num_trades": [
+        232,
+        220
+      ],
+      "coverage_pct": [
+        89.92,
+        85.27
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        67.8,
+        53.57
+      ],
+      "accuracy_avg": 60.69,
+      "accuracy_avg_weighted": 61.39,
+      "score": 44.860274,
+      "num_trades": [
+        205,
+        168
+      ],
+      "coverage_pct": [
+        79.46,
+        65.12
+      ]
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "use_lr": false,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "lr_threshold": 0.5,
+      "accuracy": [
+        71.51,
+        51.54
+      ],
+      "accuracy_avg": 61.53,
+      "accuracy_avg_weighted": 62.91,
+      "score": 44.353857,
+      "num_trades": [
+        172,
+        130
+      ],
+      "coverage_pct": [
+        66.67,
+        50.39
+      ]
+    }
+  ],
+  "metamodel": []
+}

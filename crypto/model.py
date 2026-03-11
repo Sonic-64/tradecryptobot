@@ -9,40 +9,6 @@ import json
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-class MLPModel(nn.Module):
-    def __init__(self, input_size, k=2, hidden_size=32, dropout=0.5):
-        """
-        input_size: number of features per candle (F)
-        k: number of last candles to use
-        """
-        super().__init__()
-
-        self.k = k
-        self.flattened_size = input_size * k
-
-        self.net = nn.Sequential(
-            nn.Linear(self.flattened_size, hidden_size),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_size, 1)  # binary logit output
-        )
-
-    def forward(self, x):
-        """
-        x shape: (B, T, F)
-        """
-        # Take last k candles
-        last_k = x[:, -self.k:, :]  # (B, k, F)
-
-        # Flatten
-        last_k = last_k.reshape(x.size(0), -1)  # (B, k*F)
-
-        logits = self.net(last_k)
-
-        return logits
 
 # Version with both improvements but simpler combination
 class ImprovedLSTMModel(nn.Module):

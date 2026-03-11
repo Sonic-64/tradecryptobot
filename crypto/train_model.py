@@ -18,7 +18,6 @@ import random
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from . import MLPModel
 from .tune import  save_eval_results, insert_eval_results, load_eval_results,get_best_results
 from .model import ImprovedLSTMModel,CNNModel,FocalLoss
 from .data_fetch import (
@@ -130,7 +129,7 @@ def evaluate(model, loader, class_criterion, device):
 
 
 
-def conf_eval(model,cnn_model,mlp_model,lr_model,loader,use_cnn=True,use_lstm=True,use_mlp=True,use_lr=True,prop_threshold=0.50,cnn_threshold=0.50,mlp_threshold=0.50,lr_threshold=0.50,label=""):
+def conf_eval(model,cnn_model,lr_model,loader,use_cnn=True,use_lstm=True,use_lr=True,prop_threshold=0.50,cnn_threshold=0.50,lr_threshold=0.50,label=""):
     accuracy_confidence = 0.5
     all_predictions = []
     with torch.no_grad():
@@ -144,12 +143,10 @@ def conf_eval(model,cnn_model,mlp_model,lr_model,loader,use_cnn=True,use_lstm=Tr
             logits_cnn = cnn_model(xb)
             prop_cnn = torch.sigmoid(logits_cnn)
 
-            logits_mlp = mlp_model(xb)
-            prop_mlp =  torch.sigmoid(logits_mlp)
+
             # Przenieś na CPU
             prob_up = prob_up.cpu().numpy().flatten()
             prop_cnn = prop_cnn.cpu().numpy().flatten()
-            prop_mlp = prop_mlp.cpu().numpy().flatten()
             X_np = xb[:, -16:, :].numpy().reshape(len(xb), -1)
             prop_lr = lr_model.predict_proba(X_np)[:, 1]
             y_class = y_class.cpu().numpy().flatten()
@@ -159,7 +156,6 @@ def conf_eval(model,cnn_model,mlp_model,lr_model,loader,use_cnn=True,use_lstm=Tr
                 all_predictions.append({
                     'prob_up': prob_up[i],
                     'prob_up_cnn': prop_cnn[i],
-                    'prop_up_mlp':prop_mlp[i],
                     'prop_up_lr':prop_lr[i],
                     'actual_class': y_class[i],
                     'actual_change':y_change[i],
@@ -177,14 +173,12 @@ def conf_eval(model,cnn_model,mlp_model,lr_model,loader,use_cnn=True,use_lstm=Tr
         cnn_short = p['prob_up_cnn'] < (1-cnn_threshold) if use_cnn else True
         lstm_long = p['prob_up'] > prop_threshold if use_lstm else True
         lstm_short = p['prob_up'] < (1-prop_threshold) if use_lstm else True
-        mlp_long = p['prop_up_mlp'] > mlp_threshold if use_mlp else True
-        mlp_short = p['prop_up_mlp'] < (1-mlp_threshold) if use_mlp else True
         lr_long = p['prop_up_lr'] > lr_threshold if use_lr else True
         lr_short = p['prop_up_lr'] < (1-lr_threshold) if use_lr else True
-        predict_long = (lstm_long and cnn_long and mlp_long and lr_long)
+        predict_long = (lstm_long and cnn_long and lr_long)
 
                 # Short: oba modele przewidują spadek
-        predict_short = (lstm_short and cnn_short and mlp_short and lr_short)
+        predict_short = (lstm_short and cnn_short and lr_short)
 
         if predict_long or predict_short:
 
@@ -198,11 +192,9 @@ def conf_eval(model,cnn_model,mlp_model,lr_model,loader,use_cnn=True,use_lstm=Tr
         "label": label,
         "use_lstm": use_lstm,
         "use_cnn": use_cnn,
-        "use_mlp":use_mlp,
         "use_lr":use_lr,
         "threshold":prop_threshold,
         "cnn_threshold":cnn_threshold,
-        "mlp_threshold":mlp_threshold,
         "lr_threshold":lr_threshold,
         "num_trades": len(correct_trades),
         "total_samples": len(all_predictions),
@@ -219,7 +211,7 @@ def conf_eval(model,cnn_model,mlp_model,lr_model,loader,use_cnn=True,use_lstm=Tr
         result["median_change"] = round(float(np.median(changes)) * 100, 4)
 
     return accuracy_confidence,result
-def conf_eval_live(model,cnn_model,mlp_model,lr_model,xb,use_cnn=True,use_lstm=True,use_mlp=True,use_lr=True,prop_threshold=0.50,cnn_threshold=0.50,mlp_threshold=0.50,lr_threshold=0.50):
+def conf_eval_live(model,cnn_model,lr_model,xb,use_cnn=True,use_lstm=True,use_lr=True,prop_threshold=0.50,cnn_threshold=0.50,lr_threshold=0.50):
     result = []
     predicted_direction = -1
     with torch.no_grad():
@@ -233,12 +225,9 @@ def conf_eval_live(model,cnn_model,mlp_model,lr_model,xb,use_cnn=True,use_lstm=T
         logits_cnn = cnn_model(xb)
         prop_cnn = torch.sigmoid(logits_cnn)
 
-        logits_mlp = mlp_model(xb)
-        prop_mlp =  torch.sigmoid(logits_mlp)
             # Przenieś na CPU
         prob_up = prob_up.cpu().numpy().flatten()
         prop_cnn = prop_cnn.cpu().numpy().flatten()
-        prop_mlp = prop_mlp.cpu().numpy().flatten()
         X_np = xb[:, -16:, :].numpy().reshape(len(xb), -1)
         prop_lr = lr_model.predict_proba(X_np)[:, 1]
         last_candle = xb[:, -1, :].cpu().numpy()
@@ -247,7 +236,6 @@ def conf_eval_live(model,cnn_model,mlp_model,lr_model,xb,use_cnn=True,use_lstm=T
             result.append({
                 'prob_up': prob_up[i],
                 'prob_up_cnn': prop_cnn[i],
-                'prop_up_mlp':prop_mlp[i],
                 'prop_up_lr':prop_lr[i],
                 'last_candle':last_candle[i]
             })
@@ -258,13 +246,11 @@ def conf_eval_live(model,cnn_model,mlp_model,lr_model,xb,use_cnn=True,use_lstm=T
         cnn_short = p['prob_up_cnn'] < (1-cnn_threshold) if use_cnn else True
         lstm_long = p['prob_up'] > prop_threshold if use_lstm else True
         lstm_short = p['prob_up'] < (1-prop_threshold) if use_lstm else True
-        mlp_long = p['prop_up_mlp'] > mlp_threshold if use_mlp else True
-        mlp_short = p['prop_up_mlp'] < (1-mlp_threshold) if use_mlp else True
         lr_long = p['prop_up_lr'] > lr_threshold if use_lr else True
         lr_short = p['prop_up_lr'] < (1-lr_threshold) if use_lr else True
-        predict_long = (lstm_long and cnn_long and mlp_long and lr_long)
+        predict_long = (lstm_long and cnn_long and lr_long)
 
-        predict_short = (lstm_short and cnn_short and mlp_short and lr_short)
+        predict_short = (lstm_short and cnn_short and lr_short)
 
         if predict_long or predict_short:
             predicted_direction = 1 if predict_long else 0
@@ -477,33 +463,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
             break
 
     print(f"Model saved as {dataset_dir}/{SEED}_cnn_model.pt with accuracy: {best_acc:.2%}\n")
-    mlp_model = MLPModel(
-        input_size=input_size,
-        k=16,
-        hidden_size=32,
-        dropout=0.5
-    ).to(device)
-    mlp_optimizer = torch.optim.Adam(mlp_model.parameters(), lr=3e-4, weight_decay=1e-4)
-    mlp_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(mlp_optimizer, T_max=EPOCHS)
-    mlp_criterion = nn.BCEWithLogitsLoss()
-    patience = 50
-    patience_counter = 0
-    best_acc = 0
-    for epoch in range(1, EPOCHS + 1):
-        train(mlp_model, train_loader, mlp_criterion, mlp_optimizer, device)
-        _, test_acc = evaluate(mlp_model, test_loader, mlp_criterion, device)
-        mlp_scheduler.step()
 
-        if test_acc > best_acc:
-            best_acc = test_acc
-            patience_counter = 0
-            torch.save(mlp_model.state_dict(), f"{dataset_dir}/{SEED}_mlp_model.pt")
-        else:
-            patience_counter += 1
-        if patience_counter >= patience:
-            break
-
-    print(f"Model saved as {dataset_dir}/{SEED}_mlp_model.pt with accuracy: {best_acc:.2%}\n")
     X_raw = np.load(x_path)
     y_raw = np.load(y_path)
 
@@ -528,8 +488,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     lr_val_acc = lr_model.score(X_lr, y_lr)
     print(f"LR accuracy at 0.5 threshold: {lr_val_acc:.2%}")
     joblib.dump(lr_model, f"{dataset_dir}/{SEED}_lr_model.pkl")
-    mlp_model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_mlp_model.pt"))
-    mlp_model.eval()
+
     cnn_model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_cnn_model.pt"))
     cnn_model.eval()
     model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_binary_model.pt"))
@@ -552,22 +511,21 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     flags = [True, False]
     thresholds = [0.50, 0.55, 0.60, 0.65]
 
-    for use_lstm, use_mlp, use_lr,use_cnn in product(flags, flags, flags,flags):
-        if not any([use_lstm, use_mlp, use_lr,use_cnn]):
+    for use_lstm, use_lr,use_cnn in product(flags, flags, flags):
+        if not any([use_lstm, use_lr,use_cnn]):
             continue
 
-        for threshold, mlp_threshold, lr_threshold ,cnn_threshold in product(
+        for threshold, lr_threshold ,cnn_threshold in product(
                 thresholds if use_lstm else [0.50],
-                thresholds if use_mlp else [0.50],
                 thresholds if use_lr else [0.50],
                 thresholds if use_cnn else [0.50],
 
         ):
             accuracy_confidence, r = conf_eval(
-                model, cnn_model, mlp_model, lr_model,val_loader,
+                model, cnn_model, lr_model,val_loader,
 
-                use_lstm=use_lstm, use_cnn=use_cnn, use_mlp=use_mlp, use_lr=use_lr,
-                prop_threshold=threshold,cnn_threshold=cnn_threshold,mlp_threshold=mlp_threshold,lr_threshold=lr_threshold
+                use_lstm=use_lstm, use_cnn=use_cnn, use_lr=use_lr,
+                prop_threshold=threshold,cnn_threshold=cnn_threshold,lr_threshold=lr_threshold
             )
             insert_eval_results(eval_results["val"], r)
 
@@ -771,31 +729,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         if patience_counter >= patience:
             break
 
-    mlp_model = MLPModel(
-        input_size=input_size,
-        k=16,
-        hidden_size=32,
-        dropout=0.5
-    ).to(device)
-    mlp_optimizer = torch.optim.Adam(mlp_model.parameters(), lr=3e-4, weight_decay=1e-4)
-    mlp_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(mlp_optimizer, T_max=EPOCHS)
-    mlp_criterion = nn.BCEWithLogitsLoss()
-    patience = 20
-    patience_counter = 0
-    best_acc = 0
-    for epoch in range(1, EPOCHS + 1):
-        train(mlp_model, train_loader, mlp_criterion, mlp_optimizer, device)
-        _, test_acc = evaluate(mlp_model, test_loader, mlp_criterion, device)
-        mlp_scheduler.step()
 
-        if test_acc > best_acc:
-            best_acc = test_acc
-            patience_counter = 0
-            torch.save(mlp_model.state_dict(), f"{dataset_dir}/{SEED}_mlp_model.pt")
-        else:
-            patience_counter += 1
-        if patience_counter >= patience:
-            break
 
 
     X_raw = np.load(x_path)
@@ -820,8 +754,6 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     lr_model = LogisticRegression(C=0.1, max_iter=1000, class_weight="balanced")
     lr_model.fit(X_lr, y_lr)
     joblib.dump(lr_model, f"{dataset_dir}/{SEED}_lr_model.pkl")
-    mlp_model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_mlp_model.pt"))
-    mlp_model.eval()
     cnn_model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_cnn_model.pt"))
     cnn_model.eval()
     model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_binary_model.pt"))
@@ -920,12 +852,10 @@ def paper_trade_historical(months, window_days, resample_hours, horizon,cutoff=0
         cnn.load_state_dict(torch.load(f"{dataset_dir}/{seed}_cnn_model.pt", map_location=device))
         cnn.eval()
 
-        mlp = MLPModel(input_size=input_size, k=16).to(device)
-        mlp.load_state_dict(torch.load(f"{dataset_dir}/{seed}_mlp_model.pt", map_location=device))
-        mlp.eval()
+
 
         symbol_models[symbol] = {
-            "lstm": lstm, "cnn": cnn, "mlp": mlp,
+            "lstm": lstm, "cnn": cnn,
             "lr": joblib.load(f"{dataset_dir}/{seed}_lr_model.pkl"),
             "scaler": joblib.load(f"{dataset_dir}/scaler.pkl"),
         }
@@ -1000,17 +930,13 @@ def paper_trade_historical(months, window_days, resample_hours, horizon,cutoff=0
             # Open trade if none open
             if open_trades[symbol] is None:
 
-                recent_closes = feature_array[i - 24:i, close_idx]
-                recent_returns = np.diff(recent_closes) / recent_closes[:-1]
-                current_vol = np.std(recent_returns) * 100
-                if current_vol > symbol_vol_threshold[symbol]:
-                    continue
+
                 window = feature_array[i - window_size:i]
                 X_scaled = scale_live_window(window, m["scaler"])
                 prediction = conf_eval_live(
-                    m["lstm"], m["cnn"], m["mlp"], m["lr"], X_scaled,
-                    c["use_cnn"], c["use_lstm"], c["use_mlp"], c["use_lr"],
-                    c["prop_threshold"], c["cnn_threshold"], c["mlp_threshold"], c["lr_threshold"]
+                    m["lstm"], m["cnn"],  m["lr"], X_scaled,
+                    c["use_cnn"], c["use_lstm"], c["use_lr"],
+                    c["prop_threshold"], c["cnn_threshold"], c["lr_threshold"]
                 )
                 if prediction != -1:
                     direction = "LONG" if prediction == 1 else "SHORT"
@@ -1022,7 +948,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon,cutoff=0
                         "entry": entry_price,
                         "close_at": i + horizon,
                         "opened": candle_time,
-                        "trade_size": balance * 0.1,
+                        "trade_size": balance * 0.07 * c["accuracy"],
                     }
                     print(f"  [{candle_time}] {symbol} OPENED {direction} @ {entry_price:.4f}")
 
@@ -1255,9 +1181,9 @@ def trend_follow_paper_trade(months, window_days, resample_hours, horizon, cutof
                         "entry": entry_price,
                         "close_at": i + horizon,
                         "opened": candle_time,
-                        "trade_size": balance * 0.07,
+                        "trade_size": balance * 0.05 ,
                     }
-
+                    print(f"  [{candle_time}] {symbol} OPENED {direction} @ {entry_price:.4f} | Vol: {current_vol:.4f}%")
 
     # ── 5. Summaries ──────────────────────────────────────────────────────────
     for symbol in symbols:
@@ -1312,14 +1238,11 @@ def test_live(training_time,config,resample_hours,window_days,horizon):
         cnn.load_state_dict(torch.load(f"{dataset_dir}/42_cnn_model.pt", map_location=device))
         cnn.eval()
 
-        mlp = MLPModel(input_size=input_size, k=12).to(device)
-        mlp.load_state_dict(torch.load(f"{dataset_dir}/42_mlp_model.pt", map_location=device))
-        mlp.eval()
+
 
         symbol_models[s] = {
             "lstm": lstm,
             "cnn": cnn,
-            "mlp": mlp,
             "lr": joblib.load(f"{dataset_dir}/42_lr_model.pkl"),
             "scaler": joblib.load(f"{dataset_dir}/scaler.pkl"),
         }

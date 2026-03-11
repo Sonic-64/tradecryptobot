@@ -182,8 +182,8 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     
     # RSI with safe division
     delta = df_resampled['Close'].diff()
-    gain = delta.where(delta > 0, 0).rolling(window=168, min_periods=1).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=168, min_periods=1).mean()
+    gain = delta.where(delta > 0, 0).rolling(window=56, min_periods=1).mean()
+    loss = -delta.where(delta < 0, 0).rolling(window=56, min_periods=1).mean()
     # Avoid divide by zero
     rs = gain / loss.replace(0, np.nan)
     rs = rs.fillna(0)
@@ -202,7 +202,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','log_return_1h','EMA_26','MACD_signal','bb_upper','bb_lower','Volatility','Open','EMA_12','Number of Trades'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','pct_change','time_local_Low','hour','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','log_return_1h','EMA_26','MACD_signal','bb_upper','bb_lower','Volatility','Open','EMA_12','Number of Trades','Volume','bb_width'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()
@@ -417,5 +417,3 @@ def get_training_data(symbol, days, months=-1, interval=12):
 
 
 
-if __name__ == "__main__":
-    main()
