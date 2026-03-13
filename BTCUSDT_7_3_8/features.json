@@ -3,9 +3,12 @@
   "Low",
   "Close",
   "volume_zscore",
+  "time_local_High",
+  "time_local_Low",
   "volatility_ratio",
   "taker_buy_ratio",
   "MACD",
   "RSI",
+  "hour",
   "bb_position"
 ]

@@ -6,3 +6,4 @@ scikit-learn
 dotenv
 transformers
 python-binance
+matplotlib

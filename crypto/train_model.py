@@ -1,29 +1,29 @@
 import time
 
+
 import torch
 import torch.nn as nn
 from sklearn.preprocessing import StandardScaler
 
 import joblib
+from torch.nn import BCEWithLogitsLoss
 
 from torch.utils.data import Dataset, DataLoader
 from itertools import product
-from torch.utils.data.dataset import random_split
-from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import brier_score_loss,roc_auc_score
+from sklearn.linear_model import LogisticRegression
 import numpy as np
 import json
 import random
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from .tune import  save_eval_results, insert_eval_results, load_eval_results,get_best_results
+from . import analyze_days
+from .tune import  save_eval_results, insert_eval_results, load_eval_results,get_best_config
 from .model import ImprovedLSTMModel,CNNModel,FocalLoss
 from .data_fetch import (
     make_dataset,
     get_evaluate_window,
-    scale_live_window, get_price_at
+    scale_live_window, get_price_at,download_data, compute_features
 )
 
 class NumpyDataset(Dataset):
@@ -353,8 +353,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     train_ds.X = X_train
     test_ds.X = X_test
     val_ds.X = X_val
-    alpha=1-up_ratio
-    class_criterion = FocalLoss(alpha=alpha,gamma=1.0)  # Increased gamma
+    class_criterion = BCEWithLogitsLoss()  # Increased gamma
     train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True)
     test_loader = DataLoader(test_ds, batch_size=BATCH)
     val_loader = DataLoader(val_ds,batch_size=BATCH)
@@ -363,7 +362,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     input_size = sample_x.shape[1]  # Number of features
     HIDDEN_SIZE = 32
     NUM_LAYERS = 2
-    DROPOUT = 0.5
+    DROPOUT = 0.4
     # Slightly larger model for better capacity
     model = ImprovedLSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
@@ -432,19 +431,19 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         input_size=input_size,
         num_filters=32,
         kernel_size=4,
-        dropout=0.5,
+        dropout=0.4,
     ).to(device)
     cnn_model_config = {
         "input_size": input_size,
         "num_filters": 32,  # Increased
         "kernel_size": 4,  # Increased
-        "dropout": 0.5,  # Increased
+        "dropout": 0.4,  # Increased
     }
     with open(f"{dataset_dir}/cnn_model_config.json", "w") as f:
         json.dump(cnn_model_config, f)
     cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=LR, weight_decay=1e-3)
     cnn_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(cnn_optimizer, T_max=EPOCHS)
-    cnn_criterion = nn.BCEWithLogitsLoss()
+    cnn_criterion = BCEWithLogitsLoss()
     patience = 50
     patience_counter = 0
     best_acc = 0
@@ -528,13 +527,18 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
                 prop_threshold=threshold,cnn_threshold=cnn_threshold,lr_threshold=lr_threshold
             )
             insert_eval_results(eval_results["val"], r)
-
-    get_best_results(eval_results["val"])
-    all_changes = dataset.y_change.numpy()
-    avg_change = np.mean(np.abs(all_changes))
-    print(f"average  change: {avg_change:.4%}")
-
     save_eval_results(eval_results, dataset_dir)
+    get_best_config(dataset_dir)
+
+    symbol = dataset_dir.split("_")[0]
+    print(f"STATS FOR {symbol}")
+
+    _,median_change,_,median_dip = analyze_days(symbol=symbol,lookback_days=360)
+    print(f"median dip: {median_dip:.2%}")
+    print(f"estimated needed accuracy for 100% of dip entry {((median_change - median_dip * 1.0) / (2 * median_change)):.2%}")
+    print(f"estimated needed accuracy for 70% of dip entry {((median_change - median_dip*0.7)/(2*median_change)):.2%}")
+    print(f"estimated needed accuracy for 50% of dip entry {((median_change - median_dip * 0.5) /(2 * median_change)):.2%}")
+
     return best_acc,0.0,0.0,0.0
 def get_current_utc_time():
     """Get current hour and minute in UTC"""
@@ -622,7 +626,6 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     up_ratio = y_test.mean().item()
 
     # ===== ALWAYS-UP BASELINE =====
-    always_up_acc = (y_test == 1).float().mean().item()
 
     # Reshape back to original LSTM shape
     X_train = torch.from_numpy(Xtr_2d).float().view(Ntr, T, F)
@@ -630,8 +633,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # ===== WRITE BACK INTO ORIGINAL DATASET STORAGE =====
     train_ds.X = X_train
     test_ds.X = X_test
-    alpha = 1 - up_ratio
-    class_criterion = FocalLoss(alpha=alpha, gamma=1.0)  # Increased gamma
+    class_criterion = BCEWithLogitsLoss()  # Increased gamma
     train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True)
     test_loader = DataLoader(test_ds, batch_size=BATCH)
     # Get input size from the first item in dataset
@@ -639,7 +641,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     input_size = sample_x.shape[1]  # Number of features
     HIDDEN_SIZE = 32
     NUM_LAYERS = 2
-    DROPOUT = 0.5
+    DROPOUT = 0.3
     # Slightly larger model for better capacity
     model = ImprovedLSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
@@ -699,19 +701,19 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         input_size=input_size,
         num_filters=32,
         kernel_size=4,
-        dropout=0.5,
+        dropout=0.3,
     ).to(device)
     cnn_model_config = {
         "input_size": input_size,
         "num_filters": 32,  # Increased
         "kernel_size": 4,  # Increased
-        "dropout": 0.5,  # Increased
+        "dropout": 0.3,  # Increased
     }
     with open(f"{dataset_dir}/cnn_model_config.json", "w") as f:
         json.dump(cnn_model_config, f)
     cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=LR, weight_decay=1e-3)
     cnn_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(cnn_optimizer, T_max=EPOCHS)
-    cnn_criterion = nn.BCEWithLogitsLoss()
+    cnn_criterion = BCEWithLogitsLoss()
     patience = 50
     patience_counter = 0
     best_acc = 0
@@ -781,10 +783,9 @@ def eval_live(months,window_days,resample_hours,horizon):
 
     for symbol in symbols:
         dataset_dir = f"{symbol}_{window_days}_{resample_hours}_{horizon}"
-        eval_results = load_eval_results(dataset_dir)
 
         config[symbol] = {
-            "eval": get_best_results(eval_results["val"], get_acc=False),
+            "eval": get_best_config(dataset_dir, get_acc=False),
         }
 
     training_time = datetime.now()
@@ -793,7 +794,8 @@ def eval_live(months,window_days,resample_hours,horizon):
 
 
 
-def paper_trade_historical(months, window_days, resample_hours, horizon,cutoff=0, paper_trade_days=30, seed=42):
+def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=0, paper_trade_days=30, seed=42,
+                           MAX_TRADES_PER_SYMBOL=4):
     """
     Train on data ending `paper_trade_days` ago, then simulate trading on the last `paper_trade_days`.
 
@@ -801,13 +803,10 @@ def paper_trade_historical(months, window_days, resample_hours, horizon,cutoff=0
     |-------- months of training data --------|-- paper_trade_days --|-- now
                                            cutoff=paper_trade_days  cutoff=0
     """
-    from .data_fetch import download_data, compute_features, build_windows, scale_live_window
-    from .tune import load_eval_results, get_best_results
-    import torch, joblib, json, numpy as np
-    from pathlib import Path
-    from datetime import datetime
 
-    symbols = ["BTCUSDT","ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "LTCUSDT"]
+
+
+    symbols = ["BTCUSDT","ETHUSDT", "SOLUSDT", "XRPUSDT", "LTCUSDT"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # ── 1. Train on data ending paper_trade_days ago ──────────────────────────
@@ -832,8 +831,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon,cutoff=0
     symbol_models = {}
     for symbol in symbols:
         dataset_dir = f"{symbol}_{window_days}_{resample_hours}_{horizon}"
-        eval_results = load_eval_results(dataset_dir)
-        config[symbol] = get_best_results(eval_results["val"], get_acc=False)
+        config[symbol] = get_best_config(dataset_dir, get_acc=False)
 
         # Load models
         with open(f"{dataset_dir}/model_config.json") as f:
@@ -868,24 +866,27 @@ def paper_trade_historical(months, window_days, resample_hours, horizon,cutoff=0
     total_steps_needed = window_size + paper_trade_days * steps_per_day
 
     symbol_data = {}
-    symbol_close_idx = {}
-    symbol_vol_threshold = {}
+    close_idx = 0
+    low_idx = 0
+    high_idx = 0
+
     for symbol in symbols:
         df_raw = download_data(symbol, months=6 + window_days // 30, cutoff=cutoff)
         df_feat, _ = compute_features(df_raw, resample_hours)
-        df_baseline = df_feat.iloc[:-total_steps_needed]
         df_sim = df_feat.iloc[-total_steps_needed:]
         symbol_data[symbol] = (df_sim.values.astype(np.float32), df_sim.index)
-        symbol_close_idx[symbol] = list(df_sim.columns).index('Close')
-        close_idx = symbol_close_idx[symbol]
-        baseline_closes = df_baseline[df_baseline.columns[close_idx]].values
-        baseline_returns = np.diff(baseline_closes) / baseline_closes[:-1]
-        baseline_vol = np.std(baseline_returns) * 100
-        symbol_vol_threshold[symbol] = baseline_vol * 2.0
+        cols = list(df_sim.columns)
+        close_idx = cols.index('Close')
+        low_idx = cols.index('Low')
+        high_idx = cols.index('High')
 
     balance = 1000.0
-    open_trades = {symbol: None for symbol in symbols}
-    all_trade_logs = {symbol: {"direction": [], "entry": [], "exit": [], "pnl": [],
+    peak_balance = balance
+    max_drawdown = 0
+    pause_until = 0
+    open_trades = {symbol: [] for symbol in symbols}
+    fill_stats = {symbol: {"attempts": 0, "filled": 0} for symbol in symbols}
+    all_trade_logs = {symbol: {"direction": [], "entry": [], "exit": [], "pnl": [],"raw_pnl": [],
                                "opened": [], "closed": [], "trade_size": []} for symbol in symbols}
 
     # ── 4. Unified candle walk ─────────────────────────────────────────────────
@@ -893,44 +894,57 @@ def paper_trade_historical(months, window_days, resample_hours, horizon,cutoff=0
     for i in range(window_size, min_len - horizon):
         for symbol in symbols:
             feature_array, index = symbol_data[symbol]
-            close_idx = symbol_close_idx[symbol]
             candle_time = index[i]
-            open_trade = open_trades[symbol]
             c = config[symbol]
             m = symbol_models[symbol]
-
+            still_open = []
             # Close trade if horizon has passed
-            if open_trade is not None and i >= open_trade["close_at"]:
-                exit_time = index[open_trade["close_at"]] + timedelta(minutes=1)
-                exit_price = get_price_at(symbol, exit_time)
-                if exit_price is None:
-                    exit_price = float(feature_array[open_trade["close_at"], close_idx])
+            for trade in open_trades[symbol]:
+                if i >= trade["close_at"]:
+                    exit_time = index[trade["close_at"]] + timedelta(minutes=1)
+                    exit_price = get_price_at(symbol, exit_time)
+                    if exit_price is None:
+                        exit_price = float(feature_array[trade["close_at"], close_idx])
 
-                if open_trade["direction"] == "LONG":
-                    pnl = (exit_price - open_trade["entry"]) / open_trade["entry"] * 100
+                    if trade["direction"] == "LONG":
+                        pnl = (exit_price - trade["entry"]) / trade["entry"] * 100
+                    else:
+                        pnl = (trade["entry"] - exit_price) / trade["entry"] * 100
+                    pnl -= 0.06
+                    pnl *= 10
+                    pnl = max(pnl, -100)
+                    balance += trade["trade_size"] * (pnl / 100)
+                    all_trade_logs[symbol]["trade_size"].append(round(trade["trade_size"], 4))
+                    all_trade_logs[symbol]["direction"].append(trade["direction"])
+                    all_trade_logs[symbol]["entry"].append(round(trade["entry"], 4))
+                    all_trade_logs[symbol]["exit"].append(round(exit_price, 4))
+                    all_trade_logs[symbol]["pnl"].append(round(pnl, 4))
+                    all_trade_logs[symbol]["opened"].append(str(trade["opened"]))
+                    all_trade_logs[symbol]["closed"].append(str(index[trade["close_at"]]))
+
+                    print(
+                        f"  [{candle_time}] {symbol} CLOSED {trade['direction']} @ {exit_price:.4f} | PnL: {pnl:+.2f}% | Balance: ${balance:.2f} ")
                 else:
-                    pnl = (open_trade["entry"] - exit_price) / open_trade["entry"] * 100
-                pnl -= 0.09
-                pnl *= 10
-                pnl = max(pnl, -100)
-                balance += open_trade["trade_size"] * (pnl / 100)
+                    still_open.append(trade)
+            open_trades[symbol] = still_open
+            peak_balance = max(peak_balance, balance)
+            drawdown = (peak_balance - balance) / peak_balance
+            if drawdown > 0.20:
 
-                all_trade_logs[symbol]["trade_size"].append(round(open_trade["trade_size"], 4))
-                all_trade_logs[symbol]["direction"].append(open_trade["direction"])
-                all_trade_logs[symbol]["entry"].append(round(open_trade["entry"], 4))
-                all_trade_logs[symbol]["exit"].append(round(exit_price, 4))
-                all_trade_logs[symbol]["pnl"].append(round(pnl, 4))
-                all_trade_logs[symbol]["opened"].append(str(open_trade["opened"]))
-                all_trade_logs[symbol]["closed"].append(str(index[open_trade["close_at"]]))
-                open_trades[symbol] = None
-
-                print(
-                    f"  [{candle_time}] {symbol} CLOSED {open_trade['direction']} @ {exit_price:.4f} | PnL: {pnl:+.2f}% | Balance: ${balance:.2f}")
-
+                pause_until = i + 56  # 56 × 3h = 7 days
+                peak_balance = balance  # reset so pause doesn't re-trigger immediately
+                print(f" [{candle_time}] DRAWDOWN {drawdown:.1%} — pausing all trading for 7 days")
+            if drawdown > max_drawdown:
+                max_drawdown = drawdown
+            if i < pause_until:
+                continue
             # Open trade if none open
-            if open_trades[symbol] is None:
+            if len(open_trades[symbol]) < MAX_TRADES_PER_SYMBOL:
 
-
+                acc = c.get("accuracy")
+                if not acc:
+                    continue
+                acc = acc[0] if isinstance(acc, list) else acc
                 window = feature_array[i - window_size:i]
                 X_scaled = scale_live_window(window, m["scaler"])
                 prediction = conf_eval_live(
@@ -939,18 +953,38 @@ def paper_trade_historical(months, window_days, resample_hours, horizon,cutoff=0
                     c["prop_threshold"], c["cnn_threshold"], c["lr_threshold"]
                 )
                 if prediction != -1:
+                    fill_stats[symbol]["attempts"] += 1
                     direction = "LONG" if prediction == 1 else "SHORT"
-                    entry_price = get_price_at(symbol, candle_time + timedelta(minutes=1))
-                    if entry_price is None:
-                        entry_price = float(feature_array[i, close_idx])
-                    open_trades[symbol] = {
+                    candle_open = float(feature_array[i, close_idx])
+
+                    # look at next 8 candles (24h) for fill
+                    window_end = min(i + 4, min_len - 1)
+                    next_candles = feature_array[i:window_end, :]
+
+                    dip_pct = c["DIP_PCT"] * 0.7
+
+                    if direction == "LONG":
+                        entry_price = candle_open * (1 - dip_pct)
+                        filled = any(next_candles[j, low_idx] <= entry_price
+                                     for j in range(len(next_candles)))
+                    else:
+                        entry_price = candle_open * (1 + dip_pct)
+                        filled = any(next_candles[j, high_idx] >= entry_price
+                                     for j in range(len(next_candles)))
+                    if not filled:
+                        print(f"  [{candle_time}] {symbol} {direction} DIP NOT FILLED @ {entry_price:.4f} — skipped")
+                        continue
+
+                    fill_stats[symbol]["filled"] += 1
+                    print(f"  [{candle_time}] {symbol} OPENED {direction} @ {entry_price:.4f}")
+                    open_trades[symbol].append({
                         "direction": direction,
                         "entry": entry_price,
                         "close_at": i + horizon,
                         "opened": candle_time,
-                        "trade_size": balance * 0.07 * c["accuracy"],
-                    }
-                    print(f"  [{candle_time}] {symbol} OPENED {direction} @ {entry_price:.4f}")
+                        "trade_size": max(0,balance) * 0.15 * (acc/100),
+                    })
+
 
     # ── 5. Summaries ──────────────────────────────────────────────────────────
     for symbol in symbols:
@@ -967,252 +1001,27 @@ def paper_trade_historical(months, window_days, resample_hours, horizon,cutoff=0
             trade_log["avg_pnl"] = round(sum(pnls) / len(pnls), 4)
             trade_log["total_invested"] = round(total_invested, 2)
             trade_log["total_returned"] = round(total_returned, 2)
-            trade_log["total_profit"] = round(total_profit, 2)
-            trade_log["roi"] = round(total_profit / total_invested * 100, 2)
+            trade_log["total_profit"] = round(balance - 1000.0, 2)
+            trade_log["roi"] = round((balance - 1000.0) / 1000.0 * 100, 2)
             trade_log["final_balance"] = round(balance, 2)
             print(f"\n  {symbol} Summary:")
             print(f"  Trades: {len(pnls)} | Win rate: {trade_log['win_rate']}% | Avg PnL: {trade_log['avg_pnl']}%")
             print(f"  ROI: {trade_log['roi']}% | Final balance: ${balance:.2f}")
+            print("\n─── DIP FILL STATISTICS ───")
+
+            attempts = fill_stats[symbol]["attempts"]
+            filled = fill_stats[symbol]["filled"]
+            rate = filled / attempts * 100 if attempts > 0 else 0
+            print(f"  {symbol}: {filled}/{attempts} filled ({rate:.1f}%)")
         else:
             print(f"  No trades taken for {symbol}")
 
     with open("paper_trade_historical.json", "w") as f:
         json.dump(all_trade_logs, f, indent=2)
     print("\nSaved to paper_trade_historical.json")
-    return all_trade_logs
-def trend_follow_predict(window, close_idx=0, volume_zscore_idx=3, rsi_idx=10, volatility_idx=11, bb_position_idx=13):
-    """
-    Pure rule-based trend following predictor. No ML.
-    Uses last 8 candles (24h at 3h intervals) for all signals.
+    max_drawdown = min(1000,balance)/1000
+    return max_drawdown,trade_log["roi"]
 
-    Signals:
-      1. Momentum     — 24h price change direction and magnitude
-      2. Volume       — recent volume above baseline confirms move
-      3. RSI filter   — avoid overbought longs / oversold shorts
-      4. Vol breakout — price breaking recent 24h high or low
-
-    Returns: 1 (LONG), 0 (SHORT), -1 (no trade)
-    window: raw unscaled feature array, shape (window_size, num_features)
-    """
-    TREND_CANDLES = 8          # 24h lookback
-    MOMENTUM_THRESHOLD = 0.005 # minimum 0.5% move to signal trend
-    RSI_OVERBOUGHT    = 68     # don't go long above this
-    RSI_OVERSOLD      = 32     # don't go short below this
-    VOL_MULTIPLIER    = 1.1    # recent volume must be 10% above baseline
-
-    recent = window[-TREND_CANDLES:]   # last 8 candles
-    closes = recent[:, close_idx]
-
-    # ── 1. Momentum ───────────────────────────────────────────────────────────
-    momentum = (closes[-1] - closes[0]) / (closes[0] + 1e-8)
-
-    # ── 2. Volume confirmation ────────────────────────────────────────────────
-    # volume_zscore > 0 means above rolling mean — use last 2 vs previous 6
-    vol_zscores = recent[:, volume_zscore_idx]
-    vol_recent   = vol_zscores[-2:].mean()
-    vol_baseline = vol_zscores[:-2].mean()
-    volume_confirming = vol_recent > vol_baseline * VOL_MULTIPLIER
-
-    # ── 3. RSI filter ─────────────────────────────────────────────────────────
-    rsi = recent[-1, rsi_idx]
-
-    # ── 4. Volatility breakout ────────────────────────────────────────────────
-    # Is current close breaking out of previous 7 candles range?
-    prior_closes  = closes[:-1]
-    breakout_up   = closes[-1] > prior_closes.max()
-    breakout_down = closes[-1] < prior_closes.min()
-
-    # ── Decision ─────────────────────────────────────────────────────────────
-    long_signal  = (momentum >  MOMENTUM_THRESHOLD and
-                    volume_confirming and
-                    rsi < RSI_OVERBOUGHT and
-                    breakout_up)
-
-    short_signal = (momentum < -MOMENTUM_THRESHOLD and
-                    volume_confirming and
-                    rsi > RSI_OVERSOLD and
-                    breakout_down)
-
-    if long_signal:
-        return 1
-    if short_signal:
-        return 0
-    return -1
-def trend_follow_paper_trade(months, window_days, resample_hours, horizon, cutoff=0, paper_trade_days=30):
-    """
-    Pure rule-based trend following paper trade. No ML, no training.
-    Uses trend_follow_predict() on every candle.
-
-    Signals (all must agree to open):
-      - Momentum:  24h price change > 0.5%
-      - Volume:    recent volume above baseline
-      - RSI:       not overbought/oversold
-      - Breakout:  price breaking 24h high/low
-    """
-    from .data_fetch import download_data, compute_features
-
-    symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "LTCUSDT"]
-
-    print(f"Trend follow paper trade — last {paper_trade_days} days (cutoff={cutoff})...")
-    steps_per_day = 24 // resample_hours
-    window_size = window_days * steps_per_day
-    total_steps_needed = window_size + paper_trade_days * steps_per_day
-
-    # ── 1. Download data ───────────────────────────────────────────────────────
-    symbol_data = {}
-    symbol_feat_cols = {}
-    for symbol in symbols:
-        df_raw = download_data(symbol, months=2 + window_days // 30, cutoff=cutoff)
-        df_feat, feat_cols = compute_features(df_raw, resample_hours)
-        df_sim = df_feat.iloc[-total_steps_needed:]
-        symbol_data[symbol] = (df_sim.values.astype(np.float32), df_sim.index)
-        symbol_feat_cols[symbol] = feat_cols
-
-    # ── 2. Pre-compute baseline volatility ────────────────────────────────────
-    symbol_vol_threshold = {}
-    for symbol in symbols:
-        df_raw = download_data(symbol, months=2 + window_days // 30, cutoff=cutoff)
-        df_feat, _ = compute_features(df_raw, resample_hours)
-        df_baseline = df_feat.iloc[:-total_steps_needed]
-        if len(df_baseline) > 1:
-            baseline_closes = df_baseline['Close'].values
-            baseline_returns = np.diff(baseline_closes) / baseline_closes[:-1]
-            baseline_vol = np.std(baseline_returns) * 100
-        else:
-            baseline_vol = 1.0
-        symbol_vol_threshold[symbol] = baseline_vol * 2.0
-        print(f"  {symbol} vol threshold: {symbol_vol_threshold[symbol]:.4f}%")
-
-    # ── 3. Get feature indices ─────────────────────────────────────────────────
-    def get_idx(cols, name, fallback):
-        return cols.index(name) if name in cols else fallback
-
-    balance = 1000.0
-    max_concurrent = 2
-    COOLDOWN_LOSSES = 3
-    open_trades = {symbol: None for symbol in symbols}
-    consecutive_losses = {symbol: 0 for symbol in symbols}
-    all_trade_logs = {symbol: {"direction": [], "entry": [], "exit": [], "pnl": [],
-                               "opened": [], "closed": [], "trade_size": []} for symbol in symbols}
-
-    # ── 4. Unified candle walk ─────────────────────────────────────────────────
-    min_len = min(len(symbol_data[s][0]) for s in symbols)
-    for i in range(window_size, min_len - horizon):
-        for symbol in symbols:
-            feature_array, index = symbol_data[symbol]
-            feat_cols = symbol_feat_cols[symbol]
-            close_idx        = get_idx(feat_cols, 'Close', 0)
-            vol_zscore_idx   = get_idx(feat_cols, 'volume_zscore', 3)
-            rsi_idx          = get_idx(feat_cols, 'RSI', 10)
-            volatility_idx   = get_idx(feat_cols, 'Volatility', 11)
-            bb_position_idx  = get_idx(feat_cols, 'bb_position', 13)
-
-            candle_time = index[i]
-            open_trade = open_trades[symbol]
-
-            # ── Close trade ───────────────────────────────────────────────────
-            if open_trade is not None and i >= open_trade["close_at"]:
-                exit_time = index[open_trade["close_at"]] + timedelta(minutes=1)
-                exit_price = get_price_at(symbol, exit_time)
-                if exit_price is None:
-                    exit_price = float(feature_array[open_trade["close_at"], close_idx])
-
-                if open_trade["direction"] == "LONG":
-                    pnl = (exit_price - open_trade["entry"]) / open_trade["entry"] * 100
-                else:
-                    pnl = (open_trade["entry"] - exit_price) / open_trade["entry"] * 100
-                pnl -= 0.18
-                pnl *= 20
-                pnl = max(pnl, -100)
-                balance += open_trade["trade_size"] * (pnl / 100)
-
-                if pnl < 0:
-                    consecutive_losses[symbol] += 1
-                else:
-                    consecutive_losses[symbol] = 0
-
-                all_trade_logs[symbol]["trade_size"].append(round(open_trade["trade_size"], 4))
-                all_trade_logs[symbol]["direction"].append(open_trade["direction"])
-                all_trade_logs[symbol]["entry"].append(round(open_trade["entry"], 4))
-                all_trade_logs[symbol]["exit"].append(round(exit_price, 4))
-                all_trade_logs[symbol]["pnl"].append(round(pnl, 4))
-                all_trade_logs[symbol]["opened"].append(str(open_trade["opened"]))
-                all_trade_logs[symbol]["closed"].append(str(index[open_trade["close_at"]]))
-                open_trades[symbol] = None
-
-
-
-            # ── Open trade ────────────────────────────────────────────────────
-            if open_trades[symbol] is None:
-
-                # Losing streak cooldown
-                if consecutive_losses[symbol] >= COOLDOWN_LOSSES:
-                    continue
-
-                # Max concurrent positions
-               ## open_count = sum(1 for t in open_trades.values() if t is not None)
-                ##if open_count >= max_concurrent:
-                  ##  continue
-
-                # Volatility filter
-                recent_closes = feature_array[i - 24:i, close_idx]
-                recent_returns = np.diff(recent_closes) / recent_closes[:-1]
-                current_vol = np.std(recent_returns) * 100
-                if current_vol > symbol_vol_threshold[symbol]:
-                    continue
-
-                window = feature_array[i - window_size:i]
-                prediction = trend_follow_predict(
-                    window,
-                    close_idx=close_idx,
-                    volume_zscore_idx=vol_zscore_idx,
-                    rsi_idx=rsi_idx,
-                    volatility_idx=volatility_idx,
-                    bb_position_idx=bb_position_idx,
-                )
-
-                if prediction != -1:
-                    direction = "LONG" if prediction == 1 else "SHORT"
-                    entry_price = get_price_at(symbol, candle_time + timedelta(minutes=1))
-                    if entry_price is None:
-                        entry_price = float(feature_array[i, close_idx])
-                    open_trades[symbol] = {
-                        "direction": direction,
-                        "entry": entry_price,
-                        "close_at": i + horizon,
-                        "opened": candle_time,
-                        "trade_size": balance * 0.05 ,
-                    }
-                    print(f"  [{candle_time}] {symbol} OPENED {direction} @ {entry_price:.4f} | Vol: {current_vol:.4f}%")
-
-    # ── 5. Summaries ──────────────────────────────────────────────────────────
-    for symbol in symbols:
-        trade_log = all_trade_logs[symbol]
-        pnls = trade_log["pnl"]
-        sizes = trade_log["trade_size"]
-        if pnls:
-            wins = sum(1 for p in pnls if p > 0)
-            total_invested = sum(sizes)
-            total_profit = sum(s * (p / 100) for s, p in zip(sizes, pnls))
-            total_returned = total_invested + total_profit
-            trade_log["num_trades"] = len(pnls)
-            trade_log["win_rate"] = round(wins / len(pnls) * 100, 2)
-            trade_log["avg_pnl"] = round(sum(pnls) / len(pnls), 4)
-            trade_log["total_invested"] = round(total_invested, 2)
-            trade_log["total_returned"] = round(total_returned, 2)
-            trade_log["total_profit"] = round(total_profit, 2)
-            trade_log["roi"] = round(total_profit / total_invested * 100, 2)
-            trade_log["final_balance"] = round(balance, 2)
-            print(f"\n  {symbol} Summary:")
-            print(f"  Trades: {len(pnls)} | Win rate: {trade_log['win_rate']}% | Avg PnL: {trade_log['avg_pnl']}%")
-            print(f"  ROI: {trade_log['roi']}% | Final balance: ${balance:.2f}")
-        else:
-            print(f"  No trades taken for {symbol}")
-
-    with open("trend_follow_paper_trade.json", "w") as f:
-        json.dump(all_trade_logs, f, indent=2)
-    print("\nSaved to trend_follow_paper_trade.json")
-    return all_trade_logs
 
 def test_live(training_time,config,resample_hours,window_days,horizon):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

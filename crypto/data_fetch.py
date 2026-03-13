@@ -1,16 +1,19 @@
 import argparse
 import json
-from datetime import datetime, timedelta
+from datetime import datetime,timezone,date,timedelta
 from pathlib import Path
 from typing import Tuple, List, Optional
 import numpy as np
 import pandas as pd
 import torch
 from binance.client import Client
-from datetime import date, timedelta
+import requests
 from sklearn.preprocessing import StandardScaler
 import joblib
 
+INTRADAY_TF   = "1h"       # resolution to check intraday movement
+LOOKBACK_DAYS = 180        # how far back to analyze
+DIP_THRESHOLD = 0.0        # price must drop this % below open to count as a dip
 
 # Try to import config for data directories (optional)
 
@@ -202,7 +205,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','pct_change','time_local_Low','hour','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','log_return_1h','EMA_26','MACD_signal','bb_upper','bb_lower','Volatility','Open','EMA_12','Number of Trades','Volume','bb_width'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','pct_change', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','log_return_1h','EMA_26','MACD_signal','bb_upper','bb_lower','Volatility','Open','EMA_12','Number of Trades','Volume','bb_width'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()
@@ -213,7 +216,173 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     return df_resampled, feature_columns
 
 
+def fetch_klines_range(symbol: str, interval: str, start_ts: int, end_ts: int) -> pd.DataFrame:
+    """Fetch klines over a longer range by paginating."""
+    BINANCE_API = "https://api.binance.com"
+    all_frames = []
+    current    = start_ts
 
+    while current < end_ts:
+        resp = requests.get(
+            f"{BINANCE_API}/api/v3/klines",
+            params={
+                "symbol":    symbol,
+                "interval":  interval,
+                "startTime": current,
+                "endTime":   end_ts,
+                "limit":     1000,
+            },
+            timeout=10
+        )
+        resp.raise_for_status()
+        raw = resp.json()
+        if not raw:
+            break
+
+        df = pd.DataFrame(raw, columns=[
+            "open_time","open","high","low","close","volume",
+            "close_time","quote_vol","trades","taker_buy_base",
+            "taker_buy_quote","ignore"
+        ])
+        df["open_time"]  = pd.to_datetime(df["open_time"],  unit="ms", utc=True)
+        df["close_time"] = pd.to_datetime(df["close_time"], unit="ms", utc=True)
+        for col in ["open","high","low","close","volume"]:
+            df[col] = df[col].astype(float)
+
+        all_frames.append(df)
+        current = int(raw[-1][6]) + 1  # next start = last close_time + 1ms
+
+        if len(raw) < 1000:
+            break
+
+    if not all_frames:
+        return pd.DataFrame()
+
+    combined = pd.concat(all_frames).drop_duplicates("open_time")
+    return combined.set_index("open_time").sort_index()
+def fetch_klines(symbol: str, interval: str, limit: int = 1000) -> pd.DataFrame:
+    BINANCE_API = "https://api.binance.com"
+    resp = requests.get(
+        f"{BINANCE_API}/api/v3/klines",
+        params={"symbol": symbol, "interval": interval, "limit": limit},
+        timeout=10
+    )
+    resp.raise_for_status()
+    raw = resp.json()
+
+    df = pd.DataFrame(raw, columns=[
+        "open_time","open","high","low","close","volume",
+        "close_time","quote_vol","trades","taker_buy_base",
+        "taker_buy_quote","ignore"
+    ])
+    df["open_time"]  = pd.to_datetime(df["open_time"],  unit="ms", utc=True)
+    df["close_time"] = pd.to_datetime(df["close_time"], unit="ms", utc=True)
+    for col in ["open","high","low","close","volume"]:
+        df[col] = df[col].astype(float)
+
+    return df.set_index("open_time")
+
+
+
+
+
+# ── 2. Core analysis ──────────────────────────────────────────────────────────
+def analyze_days(symbol: str, lookback_days: int):
+    """
+    For every 3h candle, look at the next HORIZON candles (24h).
+    If price closes higher after HORIZON candles  → LONG case: did it dip below open first?
+    If price closes lower after HORIZON candles   → SHORT case: did it spike above open first?
+
+    Results are grouped by candle hour (0,3,6,9,12,15,18,21) so you can see
+    which signal hour gives the most reliable dip/spike pattern.
+    """
+    end_ts   = int(datetime.now(timezone.utc).timestamp() * 1000)
+    start_ts = end_ts - lookback_days * 86400 * 1000
+
+
+    hourly = fetch_klines_range(symbol, INTRADAY_TF, start_ts, end_ts)
+
+
+
+    candles = hourly.resample("3h").agg({
+        "open":      "first",
+        "high":      "max",
+        "low":       "min",
+        "close":     "last",
+        "volume":    "sum",
+        "close_time":"last",
+    }).dropna()
+    HORIZON = 8
+    candle_list = list(candles.iterrows())
+    long_results  = []
+    short_results = []
+
+    for idx, (candle_ts, candle_row) in enumerate(candle_list):
+        # Need enough candles ahead for the full horizon
+        if idx + HORIZON >= len(candle_list):
+            continue
+
+        candle_open  = candle_row["open"]
+        horizon_close_ts, horizon_row = candle_list[idx + HORIZON]
+        horizon_close = horizon_row["close"]
+        candle_hour   = candle_ts.hour
+        is_up         = horizon_close > candle_open
+
+        pct_move = (horizon_close - candle_open) / candle_open * 100
+
+        # Get all 1h candles between signal and horizon close
+        horizon_end = horizon_row["close_time"]
+        mask        = (hourly.index >= candle_ts) & (hourly.index < horizon_end)
+        window      = hourly[mask]
+        if window.empty:
+            continue
+
+        if is_up:
+            # LONG: did price dip below candle open within the horizon?
+            dip_level    = candle_open
+            min_low      = window["low"].min()
+            had_dip      = min_low < dip_level
+            move_pct     = (candle_open - min_low) / candle_open * 100
+            extreme_hour = window["low"].idxmin().hour
+
+            long_results.append({
+                "candle_ts":     candle_ts,
+                "candle_hour":   candle_hour,       # 0,3,6,9,12,15,18,21
+                "candle_open":   candle_open,
+                "horizon_close": horizon_close,
+                "pct_move":      round(pct_move, 2),
+                "extreme_price": round(min_low, 2),
+                "adverse_pct":   round(move_pct, 2),
+                "had_adverse":   had_dip,
+                "extreme_hour":  extreme_hour,
+            })
+        else:
+            # SHORT: did price spike above candle open within the horizon?
+            spike_level  = candle_open
+            max_high     = window["high"].max()
+            had_spike    = max_high > spike_level
+            move_pct     = (max_high - candle_open) / candle_open * 100
+            extreme_hour = window["high"].idxmax().hour
+
+            short_results.append({
+                "candle_ts":     candle_ts,
+                "candle_hour":   candle_hour,
+                "candle_open":   candle_open,
+                "horizon_close": horizon_close,
+                "pct_move":      round(abs(pct_move), 2),
+                "extreme_price": round(max_high, 2),
+                "adverse_pct":   round(move_pct, 2),
+                "had_adverse":   had_spike,
+                "extreme_hour":  extreme_hour,
+
+            })
+    long_df = pd.DataFrame(long_results)
+    short_df = pd.DataFrame(short_results)
+    long_adv = long_df[long_df["had_adverse"]]["adverse_pct"]
+    short_adv = short_df[short_df["had_adverse"]]["adverse_pct"]
+    all_adv = pd.concat([long_adv, short_adv])
+    all_change = pd.concat([long_df["pct_move"], short_df["pct_move"]])
+    return (round(all_change.mean(),4)/100), (round(all_change.median(),4)/100), (round(all_adv.mean(),4)/100), (round(all_adv.median(),4)/100)
 def build_windows(
     df_features: pd.DataFrame,
     window_days: int,
@@ -221,20 +390,7 @@ def build_windows(
     horizon: int,
     step: int
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Build sliding windows and targets using vectorized operations.
-    
-    Args:
-        df_features: Feature DataFrame (already resampled)
-        window_days: Number of days in each window
-        resample_hours: Resampling interval in hours
-        horizon: Number of resampled steps ahead to predict
-        step: Stride between sliding windows
-    
-    Returns:
-        Tuple of (X: array of shape (N, T, F), y: array of shape (N,))
-    """
-    # Calculate window size in resampled steps
+
     steps_per_day = 24 / resample_hours
     window_size = int(window_days * steps_per_day)
     

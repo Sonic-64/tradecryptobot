@@ -13,7 +13,7 @@ import asyncio
 
 
 if __name__ == "__main__":
-    symbols = ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","LTCUSDT"]
+    symbols = ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","LTCUSDT"]
     parser = argparse.ArgumentParser(description="Crypto prediction tool")
     parser.add_argument("--data_fetch", action="store_true", help="fetching data")
     parser.add_argument("--train", action="store_true", help="Training mode")
@@ -78,9 +78,44 @@ if __name__ == "__main__":
 
 
     if args.backtest:
-        i =0
-        while i < 60:
-            crypto.paper_trade_historical(months=args.months, window_days=args.window_days, resample_hours=args.resample_hours,
+        i = 80
+        for symbol in symbols:
+            filename = f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}/eval_results.json"
+            if os.path.exists(filename):
+                os.remove(filename)
+
+        while i < 445:
+
+            for symbol in symbols:
+                crypto.make_dataset(
+                    symbol=symbol,
+                    # Defaulting to BTC-USD as per original intent or make it an arg? Adding symbol arg would be good too but sticking to requested ones first.
+                    months=args.months,
+                    window_days=args.window_days,
+                    resample_hours=args.resample_hours,
+                    horizon=args.horizon,
+                    step=args.step,
+                    cutoff=i
+                )
+                time.sleep(1)
+
+            for symbol in symbols:
+                _, _, _, _ = crypto.Train_val(
+                    dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}",
+                    EPOCHS=args.epochs)
+
+            i += 40
+        i = 0
+        drawdowns = []
+        rois = []
+        while i < 180:
+            drawdown,roi = crypto.paper_trade_historical(months=args.months, window_days=args.window_days, resample_hours=args.resample_hours,
                                horizon=args.horizon, cutoff=i)
-            i+=10
+            drawdowns.append(drawdown)
+            rois.append(roi)
+            i+=20
+            print(f"mean roi {np.mean(rois)}")
+            print(f"mean drawdown {np.mean(drawdowns)}")
+            print(f"median roi {np.median(rois)}")
+            print(f"median drawdown {np.median(drawdowns)}")
 
