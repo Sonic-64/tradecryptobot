@@ -2,13 +2,14 @@
   "High",
   "Low",
   "Close",
+  "funding_rate",
   "volume_zscore",
-  "time_local_High",
-  "time_local_Low",
-  "volatility_ratio",
-  "taker_buy_ratio",
-  "MACD",
+  "distance_to_high",
+  "distance_to_low",
+  "trend_slope_long",
   "RSI",
+  "taker_buy_ratio",
   "hour",
-  "bb_position"
+  "bb_position",
+  "bb_width"
 ]

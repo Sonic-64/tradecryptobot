@@ -52,6 +52,49 @@ def get_price_at(symbol, dt):
     if not klines:
         return None
     return float(klines[0][4])
+def fetch_all_funding_rates(symbol="BTCUSDT", start_time=None, end_time=None):
+    all_data = []
+    current_start = start_time
+
+    while True:
+        data = client.futures_funding_rate(
+            symbol=symbol,
+            startTime=current_start,
+            endTime=end_time,
+            limit=1000
+        )
+
+        if not data:
+            break
+
+        all_data.extend(data)
+
+        last_time = data[-1]["fundingTime"]
+        current_start = last_time + 1  # move forward
+
+        if len(data) < 1000:
+            break
+
+    df = pd.DataFrame(all_data)
+
+    if df.empty:
+        return df
+
+    df["fundingTime"] = pd.to_datetime(df["fundingTime"], unit="ms")
+    df["fundingRate"] = df["fundingRate"].astype(float)
+
+    return df[["fundingTime", "fundingRate"]]
+def align_funding(funding_df, price_df):
+    funding_df = funding_df.set_index("fundingTime").sort_index()
+
+    # Resample funding to 3H to match your candles
+    funding_aligned = funding_df.resample("1h").ffill()
+
+    # Align exactly to your price dataframe index
+    funding_aligned = funding_aligned.reindex(price_df.index, method="ffill")
+
+    return funding_aligned
+
 def download_data(symbol: str, months: int, interval: str = "1h",cutoff:int=0):
 
 
@@ -86,9 +129,8 @@ def download_data(symbol: str, months: int, interval: str = "1h",cutoff:int=0):
     if df is None or df.empty:
         raise RuntimeError(f"No data returned for {symbol}")
 
-
-
     df['Open Time'] = pd.to_datetime(df['Open Time'], unit='ms', utc=True)
+
     df = df.set_index('Open Time').sort_index()
     # Ensure DatetimeIndex (sometimes it’s plain Index)
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -96,12 +138,32 @@ def download_data(symbol: str, months: int, interval: str = "1h",cutoff:int=0):
     # Strip timezone if present (resample expects naive or consistent tz)
     if getattr(df.index, "tz", None) is not None:
         df.index = df.index.tz_localize(None)
+    funding_df = fetch_all_funding_rates(
+        symbol=symbol,
+        start_time=int(df.index[0].timestamp() * 1000),
+        end_time=int(df.index[-1].timestamp() * 1000)
+    )
 
+    # Align to your candles
+    funding_aligned = align_funding(funding_df, df)
+
+    # Merge
+    df["funding_rate"] = funding_aligned["fundingRate"]
     df = df.sort_index().dropna(how="any")
     df = df.drop(columns=['Ignore','Close Time'])
 
     return df
-
+def rolling_slope(series, window=20):
+    slopes = []
+    for i in range(len(series)):
+        if i < window:
+            slopes.append(0.0)
+        else:
+            y = series.iloc[i-window:i].values
+            x = np.arange(window)
+            coef = np.polyfit(x, y, 1)
+            slopes.append(coef[0] / series.iloc[i])  # normalize by price
+    return pd.Series(slopes, index=series.index)
 
 def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFrame, List[str]]:
     """
@@ -114,7 +176,6 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     Returns:
         Tuple of (feature DataFrame, feature column names)
     """
-    df_hours = len(df)
     # Resample to specified interval
     df_resampled = df.resample(f'{resample_hours}h').agg({
         'Open': 'first',
@@ -125,20 +186,21 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
         'Quote Asset Volume':'sum',
         'Number of Trades':'sum',
         'Taker Buy Base Asset Volume':'sum',
-        'Taker Buy Quote Asset Volume':'sum'
+        'Taker Buy Quote Asset Volume':'sum',
+        'funding_rate':'last'
 
 
     }).dropna()
     # Local ATH/ATL features
-    volume_mean = df_resampled['Volume'].rolling(window=20, min_periods=1).mean()
-    volume_std = df_resampled['Volume'].rolling(window=20, min_periods=1).std()
+    volume_mean = df_resampled['Volume'].rolling(window=112, min_periods=1).mean()
+    volume_std = df_resampled['Volume'].rolling(window=112, min_periods=1).std()
 
     # Z-score = (x - mean) / std
     # Dodaj małą stałą aby uniknąć dzielenia przez 0
     df_resampled['volume_zscore'] = (df_resampled['Volume'] - volume_mean) / (volume_std + 1e-8)
     df_resampled['volume_zscore'] = df_resampled['volume_zscore'].clip(-5, 5)
-    df_resampled['local_ATH'] = df_resampled['Close'].rolling(window=168, min_periods=1).max()
-    df_resampled['local_ATL'] = df_resampled['Close'].rolling(window=168, min_periods=1).min()
+    df_resampled['local_ATH'] = df_resampled['Close'].rolling(window=224, min_periods=1).max()
+    df_resampled['local_ATL'] = df_resampled['Close'].rolling(window=224, min_periods=1).min()
     df_resampled['pct_change'] = df_resampled['Close'].pct_change(periods=3,fill_method=None)
     df_resampled['pct_change'] = df_resampled['pct_change'].fillna(0.0)
     is_ath = df_resampled['Close'] == df_resampled['local_ATH']
@@ -149,41 +211,23 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     cumsum_not_ath = not_ath.cumsum()
     last_ath_cumsum = cumsum_not_ath.where(is_ath).ffill().fillna(0)
     df_resampled['time_local_High'] = cumsum_not_ath - last_ath_cumsum
-    
-    # Time since local low
+    df_resampled['distance_to_high'] = (df_resampled['Close']/df_resampled['local_ATH'])-1
+    df_resampled['distance_to_low'] =  (df_resampled['Close']/df_resampled['local_ATL'])-1
+     # Time since local low
     not_atl = ~is_atl
     cumsum_not_atl = not_atl.cumsum()
     last_atl_cumsum = cumsum_not_atl.where(is_atl).ffill().fillna(0)
     df_resampled['time_local_Low'] = cumsum_not_atl - last_atl_cumsum
 
+
     df_resampled['log_return_1h'] = np.log(df_resampled['Close'] / df_resampled['Close'].shift(1)).fillna(0)
 
     # 2. VOLATILITY RATIO (short-term vs long-term volatility)
     # Short-term volatility (6 periods = ~1.5 days for 6h candles)
-    short_vol = df_resampled['log_return_1h'].rolling(window=6, min_periods=1).std().fillna(0)
-    # Long-term volatility (24 periods = ~6 days for 6h candles)
-    long_vol = df_resampled['log_return_1h'].rolling(window=24, min_periods=1).std().fillna(0)
-    df_resampled['volatility_ratio'] = short_vol / (long_vol + 1e-8)
 
+    df_resampled['trend_slope_long'] = rolling_slope(df_resampled['Close'], window=224)
     # 3. VOLUME-PRICE CORRELATION (smart money detection)
     # 20-period rolling correlation between volume and price
-
-
-    # 4. TAKER BUY RATIO (buy pressure)
-    df_resampled['taker_buy_ratio'] = (
-            df_resampled['Taker Buy Base Asset Volume'] /
-            (df_resampled['Volume'] + 1e-8)
-    )
-    df_resampled['Volume'] = df_resampled['Volume'] / df_resampled['Close']    # Technical indicators with safe NaN handling
-    # EMA
-    df_resampled['EMA_12'] = df_resampled['Close'].ewm(span=12, min_periods=1,adjust=False).mean()
-    df_resampled['EMA_26'] = df_resampled['Close'].ewm(span=26, min_periods=1,adjust=False).mean()
-    
-    # MACD
-    df_resampled['MACD'] = (df_resampled['EMA_12'] - df_resampled['EMA_26']) / (df_resampled['Close'] + 1e-8)
-    df_resampled['MACD_signal'] = df_resampled['MACD'].ewm(span=9, min_periods=1,adjust=False).mean()
-    
-    # RSI with safe division
     delta = df_resampled['Close'].diff()
     gain = delta.where(delta > 0, 0).rolling(window=56, min_periods=1).mean()
     loss = -delta.where(delta < 0, 0).rolling(window=56, min_periods=1).mean()
@@ -192,10 +236,18 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     rs = rs.fillna(0)
     df_resampled['RSI'] = 100 - (100 / (1 + rs))
     df_resampled['RSI'] = df_resampled['RSI'].fillna(50.0)  # Default to neutral RSI
+
+    # 4. TAKER BUY RATIO (buy pressure)
+    df_resampled['taker_buy_ratio'] = (
+            df_resampled['Taker Buy Base Asset Volume'] /
+            (df_resampled['Volume'] + 1e-8)
+    )
+    df_resampled['Volume'] = df_resampled['Volume'] / df_resampled['Close']    # Technical indicators with safe NaN handling
+    # EMA
+
+    
+    # RSI with safe division
     # Volatility
-    df_resampled['Volatility'] = df_resampled['Close'].rolling(window=12, min_periods=1).std()
-    df_resampled['Volatility'] = df_resampled['Volatility'].fillna(0.0)
-    df_resampled['Volatility'] = df_resampled['Volatility'] / df_resampled['Close']
     df_resampled['hour'] =  df_resampled.index.hour
     bb_ma = df_resampled['Close'].rolling(20).mean()
     bb_std = df_resampled['Close'].rolling(20).std()
@@ -205,7 +257,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','pct_change', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','log_return_1h','EMA_26','MACD_signal','bb_upper','bb_lower','Volatility','Open','EMA_12','Number of Trades','Volume','bb_width'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','time_local_Low','time_local_High','pct_change', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','log_return_1h','bb_upper','bb_lower','Open','Number of Trades','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()

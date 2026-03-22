@@ -77,12 +77,11 @@ if __name__ == "__main__":
                                 EPOCHS=args.epochs)
 
 
+
     if args.backtest:
-        i = 80
-        for symbol in symbols:
-            filename = f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}/eval_results.json"
-            if os.path.exists(filename):
-                os.remove(filename)
+        i = 90
+
+
 
         while i < 445:
 
@@ -108,14 +107,15 @@ if __name__ == "__main__":
         i = 0
         drawdowns = []
         rois = []
-        while i < 180:
+        drawdowns = []
+        while i < 181:
             drawdown,roi = crypto.paper_trade_historical(months=args.months, window_days=args.window_days, resample_hours=args.resample_hours,
                                horizon=args.horizon, cutoff=i)
             drawdowns.append(drawdown)
             rois.append(roi)
-            i+=20
-            print(f"mean roi {np.mean(rois)}")
-            print(f"mean drawdown {np.mean(drawdowns)}")
-            print(f"median roi {np.median(rois)}")
-            print(f"median drawdown {np.median(drawdowns)}")
+            i+=30
+        print(f"mean roi {np.mean(rois)}")
+        print(f"mean drawdown {np.mean(drawdowns)}")
+        print(f"median roi {np.median(rois)}")
+        print(f"median drawdown {np.median(drawdowns)}")
 

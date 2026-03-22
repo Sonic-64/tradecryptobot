@@ -28,8 +28,8 @@ def _compute_score(accuracy_pct,coverage):
     base = (2 * acc - 0.1)
     if base <= 0:
         return 0
-    coverage_factor = coverage ** 1.5
-    return round(math.log(2*acc - 0.1) * coverage_factor, 6)
+    coverage_factor = coverage ** 1.2
+    return round(math.log(2*acc - 0.06) * coverage_factor, 6)
 def load_eval_results(dataset_dir):
     path = Path(dataset_dir) / "eval_results.json"
     if not path.exists():
@@ -47,10 +47,10 @@ def load_eval_results(dataset_dir):
 
     return data
 def insert_eval_results(row,new_result):
-    key = (new_result['use_lstm'], new_result['use_cnn'],new_result['use_lr'],new_result['threshold'],new_result['cnn_threshold'],new_result['lr_threshold'])
+    key = (new_result['use_lstm'], new_result['use_cnn'],new_result['threshold'],new_result['cnn_threshold'])
 
     for existing in row:
-        existing_key = (existing['use_lstm'], existing['use_cnn'],existing['use_lr'],existing['threshold'],existing['cnn_threshold'],existing['lr_threshold'])
+        existing_key = (existing['use_lstm'], existing['use_cnn'],existing['threshold'],existing['cnn_threshold'])
         if existing_key == key:
             existing['accuracy'].append(new_result['accuracy'])
             existing['num_trades'].append(new_result['num_trades'])
@@ -74,10 +74,8 @@ def insert_eval_results(row,new_result):
     row.append({
         'use_lstm': new_result['use_lstm'],
         'use_cnn': new_result['use_cnn'],
-        'use_lr':new_result['use_lr'],
         'threshold':new_result['threshold'],
         'cnn_threshold':new_result['cnn_threshold'],
-        'lr_threshold':new_result['lr_threshold'],
         'accuracy': new_result['accuracy'],
         'accuracy_avg':new_result['accuracy'],
         'accuracy_avg_weighted':new_result['accuracy'],
@@ -98,10 +96,8 @@ def get_best_config(dataset_dir,get_acc=False):
     result = {
         "use_lstm": False,
         "use_cnn": False,
-        "use_lr": False,
         "prop_threshold": 0.0,
         "cnn_threshold":0.0,
-        "lr_threshold":0.0,
         "accuracy": 0,
         "coverage": 0,
         "score":0,
@@ -121,12 +117,10 @@ def get_best_config(dataset_dir,get_acc=False):
             if exists['accuracy_avg_weighted'] > result['accuracy']:
                 result['accuracy'] = exists['accuracy_avg_weighted']
                 result['coverage'] = exists['coverage_avg']
-                result['use_lr'] = exists['use_lr']
                 result['use_cnn'] = exists['use_cnn']
                 result['use_lstm'] = exists['use_lstm']
                 result['prop_threshold'] = exists['threshold']
                 result['cnn_threshold'] = exists['cnn_threshold']
-                result['lr_threshold'] = exists['lr_threshold']
                 result['score'] = exists['score']
         else:
             if exists['score'] is None:
@@ -134,12 +128,10 @@ def get_best_config(dataset_dir,get_acc=False):
             if exists['score'] > result['score']:
                 result['accuracy'] = exists['accuracy_avg_weighted']
                 result['coverage'] = exists['coverage_avg']
-                result['use_lr'] = exists['use_lr']
                 result['use_cnn'] = exists['use_cnn']
                 result['use_lstm'] = exists['use_lstm']
                 result['prop_threshold'] = exists['threshold']
                 result['cnn_threshold'] = exists['cnn_threshold']
-                result['lr_threshold'] = exists['lr_threshold']
                 result['score'] = exists['score']
     print(json.dumps(result, indent=2))
     return result

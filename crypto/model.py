@@ -29,14 +29,11 @@ class ImprovedLSTMModel(nn.Module):
             bidirectional=True
         )
 
-        # 2. FIXED Feature Gating - weight EACH feature separately
-        # Input: [batch, seq_len, features] → Output: [batch, seq_len, features]
         self.feature_gate = nn.Sequential(
-            nn.Linear(input_size, input_size),  # Same size for per-feature weights
+            nn.Linear(input_size, input_size),
             nn.Sigmoid()
         )
 
-        # 3. Temporal Convolution (kernel_size=3 is better than 5 for crypto)
         self.temp_conv = nn.Conv1d(
             in_channels=hidden_size * 2,  # From bidirectional LSTM
             out_channels=hidden_size,
@@ -87,7 +84,51 @@ class ImprovedLSTMModel(nn.Module):
 
         return self.class_head(out)
 
+class LSTMModel(nn.Module):
+    def __init__(self, input_size, hidden_size=64, num_layers=2, dropout=0.3):
+        super().__init__()
 
+        self.lstm = nn.LSTM(
+            input_size,
+            hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout,
+            bidirectional=True
+        )
+
+        self.attn = nn.Sequential(
+            nn.Linear(hidden_size * 2, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+
+        self.norm = nn.LayerNorm(hidden_size * 4)
+
+        self.fc = nn.Linear(hidden_size * 4, 128)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+        self.out = nn.Linear(128, 1)
+
+    def forward(self, x):
+        lstm_out, _ = self.lstm(x)
+
+        attn_scores = self.attn(lstm_out)
+        attn_weights = torch.softmax(
+            attn_scores / (lstm_out.size(-1) ** 0.5), dim=1
+        )
+
+        attn_pool = (lstm_out * attn_weights).sum(dim=1)
+        last = lstm_out[:, -1, :]
+
+        combined = torch.cat([attn_pool, last], dim=1)
+        combined = self.norm(combined)
+
+        out = self.fc(combined)
+        out = self.relu(out)
+        out = self.dropout(out)
+
+        return self.out(out)
 class CNNModel(nn.Module):
     """
     1-D Temporal CNN for binary direction classification.

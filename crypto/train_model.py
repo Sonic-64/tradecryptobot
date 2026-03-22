@@ -19,7 +19,7 @@ from pathlib import Path
 
 from . import analyze_days
 from .tune import  save_eval_results, insert_eval_results, load_eval_results,get_best_config
-from .model import ImprovedLSTMModel,CNNModel,FocalLoss
+from .model import LSTMModel,CNNModel,FocalLoss
 from .data_fetch import (
     make_dataset,
     get_evaluate_window,
@@ -129,7 +129,7 @@ def evaluate(model, loader, class_criterion, device):
 
 
 
-def conf_eval(model,cnn_model,lr_model,loader,use_cnn=True,use_lstm=True,use_lr=True,prop_threshold=0.50,cnn_threshold=0.50,lr_threshold=0.50,label=""):
+def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50,label=""):
     accuracy_confidence = 0.5
     all_predictions = []
     with torch.no_grad():
@@ -147,16 +147,12 @@ def conf_eval(model,cnn_model,lr_model,loader,use_cnn=True,use_lstm=True,use_lr=
             # Przenieś na CPU
             prob_up = prob_up.cpu().numpy().flatten()
             prop_cnn = prop_cnn.cpu().numpy().flatten()
-            X_np = xb[:, -16:, :].numpy().reshape(len(xb), -1)
-            prop_lr = lr_model.predict_proba(X_np)[:, 1]
-            y_class = y_class.cpu().numpy().flatten()
             last_candle = xb[:, -1, :].cpu().numpy()
             # Zapisz wszystko
             for i in range(len(prob_up)):
                 all_predictions.append({
                     'prob_up': prob_up[i],
                     'prob_up_cnn': prop_cnn[i],
-                    'prop_up_lr':prop_lr[i],
                     'actual_class': y_class[i],
                     'actual_change':y_change[i],
                     'last_candle':last_candle[i]
@@ -173,12 +169,10 @@ def conf_eval(model,cnn_model,lr_model,loader,use_cnn=True,use_lstm=True,use_lr=
         cnn_short = p['prob_up_cnn'] < (1-cnn_threshold) if use_cnn else True
         lstm_long = p['prob_up'] > prop_threshold if use_lstm else True
         lstm_short = p['prob_up'] < (1-prop_threshold) if use_lstm else True
-        lr_long = p['prop_up_lr'] > lr_threshold if use_lr else True
-        lr_short = p['prop_up_lr'] < (1-lr_threshold) if use_lr else True
-        predict_long = (lstm_long and cnn_long and lr_long)
+        predict_long = (lstm_long and cnn_long)
 
                 # Short: oba modele przewidują spadek
-        predict_short = (lstm_short and cnn_short and lr_short)
+        predict_short = (lstm_short and cnn_short )
 
         if predict_long or predict_short:
 
@@ -192,10 +186,8 @@ def conf_eval(model,cnn_model,lr_model,loader,use_cnn=True,use_lstm=True,use_lr=
         "label": label,
         "use_lstm": use_lstm,
         "use_cnn": use_cnn,
-        "use_lr":use_lr,
         "threshold":prop_threshold,
         "cnn_threshold":cnn_threshold,
-        "lr_threshold":lr_threshold,
         "num_trades": len(correct_trades),
         "total_samples": len(all_predictions),
         "coverage_pct": round(len(correct_trades) / len(all_predictions) * 100, 2) if all_predictions else 0,
@@ -211,7 +203,7 @@ def conf_eval(model,cnn_model,lr_model,loader,use_cnn=True,use_lstm=True,use_lr=
         result["median_change"] = round(float(np.median(changes)) * 100, 4)
 
     return accuracy_confidence,result
-def conf_eval_live(model,cnn_model,lr_model,xb,use_cnn=True,use_lstm=True,use_lr=True,prop_threshold=0.50,cnn_threshold=0.50,lr_threshold=0.50):
+def conf_eval_live(model,cnn_model,xb,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50):
     result = []
     predicted_direction = -1
     with torch.no_grad():
@@ -228,15 +220,12 @@ def conf_eval_live(model,cnn_model,lr_model,xb,use_cnn=True,use_lstm=True,use_lr
             # Przenieś na CPU
         prob_up = prob_up.cpu().numpy().flatten()
         prop_cnn = prop_cnn.cpu().numpy().flatten()
-        X_np = xb[:, -16:, :].numpy().reshape(len(xb), -1)
-        prop_lr = lr_model.predict_proba(X_np)[:, 1]
         last_candle = xb[:, -1, :].cpu().numpy()
             # Zapisz wszystko
         for i in range(len(prob_up)):
             result.append({
                 'prob_up': prob_up[i],
                 'prob_up_cnn': prop_cnn[i],
-                'prop_up_lr':prop_lr[i],
                 'last_candle':last_candle[i]
             })
 
@@ -246,11 +235,9 @@ def conf_eval_live(model,cnn_model,lr_model,xb,use_cnn=True,use_lstm=True,use_lr
         cnn_short = p['prob_up_cnn'] < (1-cnn_threshold) if use_cnn else True
         lstm_long = p['prob_up'] > prop_threshold if use_lstm else True
         lstm_short = p['prob_up'] < (1-prop_threshold) if use_lstm else True
-        lr_long = p['prop_up_lr'] > lr_threshold if use_lr else True
-        lr_short = p['prop_up_lr'] < (1-lr_threshold) if use_lr else True
-        predict_long = (lstm_long and cnn_long and lr_long)
+        predict_long = (lstm_long and cnn_long )
 
-        predict_short = (lstm_short and cnn_short and lr_short)
+        predict_short = (lstm_short and cnn_short)
 
         if predict_long or predict_short:
             predicted_direction = 1 if predict_long else 0
@@ -264,7 +251,6 @@ def save_split(X, y, directory, name):
     np.save(f"{directory}/{name}_X.npy", X)
     np.save(f"{directory}/{name}_y.npy", y)
     # Podział na train/test
-
 
 
 
@@ -308,12 +294,12 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # Define boundaries on the FULL unfiltered data
     train_end = int(0.70 * N_raw)
     test_end = int(0.875 * N_raw)
-    val_end = int(N_raw*0.935 )
+    val_end = int(N_raw)
     save_split(X_raw[0:train_end], y_raw[0:train_end], dataset_dir, "train")
     save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
     save_split(X_raw[test_end:val_end], y_raw[test_end:val_end], dataset_dir, "val")
 
-    train_ds = NumpyDataset(f"{outdir_path}/train_X.npy",f"{outdir_path}/train_y.npy",features_path,filter_noise=True)
+    train_ds = NumpyDataset(f"{outdir_path}/train_X.npy",f"{outdir_path}/train_y.npy",features_path,filter_noise=False)
     test_ds = NumpyDataset(f"{outdir_path}/test_X.npy",f"{outdir_path}/test_y.npy",features_path,filter_noise=False)
     val_ds = NumpyDataset(f"{outdir_path}/val_X.npy",f"{outdir_path}/val_y.npy",features_path,filter_noise=False)
     X_train = torch.stack([train_ds[i][0] for i in range(len(train_ds))])
@@ -337,7 +323,6 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     joblib.dump(scaler, scaler_path)
     y_test = torch.stack([test_ds[i][1] for i in range(len(test_ds))])
 
-    up_ratio = y_test.mean().item()
 
 
     # ===== ALWAYS-UP BASELINE =====
@@ -360,11 +345,11 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
-    HIDDEN_SIZE = 32
+    HIDDEN_SIZE = 16
     NUM_LAYERS = 2
-    DROPOUT = 0.4
+    DROPOUT = 0.2
     # Slightly larger model for better capacity
-    model = ImprovedLSTMModel(
+    model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
     ).to(device)
     optimizer = torch.optim.Adam(
@@ -463,11 +448,9 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     print(f"Model saved as {dataset_dir}/{SEED}_cnn_model.pt with accuracy: {best_acc:.2%}\n")
 
-    X_raw = np.load(x_path)
-    y_raw = np.load(y_path)
 
-    # Use train+test portion (first 87.5% of data, same split as before)
-    split_end = test_end  # already calculated above
+
+
     with open(features_path, 'r') as f:
         feature_names = json.load(f)
 
@@ -476,17 +459,6 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     except ValueError:
         print("Warning: 'Close' not found in features, using index 3 as fallback")
         close_idx = 3
-    X_lr = X_raw[:split_end, -16:, :].reshape(split_end, -1)
-    Nx = len(X_lr)
-    X_lr = scaler.transform(X_lr.reshape(-1, F)).reshape(Nx, 16, F)
-    X_lr = X_lr.reshape(Nx, -1)
-    y_lr = (y_raw[:split_end] > X_raw[:split_end, -1, close_idx]).astype(int)  # same binary label logic
-
-    lr_model =LogisticRegression(C=0.1, max_iter=1000,class_weight="balanced")
-    lr_model.fit(X_lr, y_lr)
-    lr_val_acc = lr_model.score(X_lr, y_lr)
-    print(f"LR accuracy at 0.5 threshold: {lr_val_acc:.2%}")
-    joblib.dump(lr_model, f"{dataset_dir}/{SEED}_lr_model.pkl")
 
     cnn_model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_cnn_model.pt"))
     cnn_model.eval()
@@ -505,26 +477,31 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
             "metamodel": []
 
         }
-
+    criterion = nn.BCEWithLogitsLoss()
+    _, train_acc = evaluate(model, train_loader, criterion, device)
+    _, test_acc = evaluate(model, test_loader, criterion, device)
+    print(f" LSTM train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}")
+    _, train_acc = evaluate(model, train_loader, criterion, device)
+    _, test_acc = evaluate(model, test_loader, criterion, device)
+    print(f" CNN train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}")
     print(f"Evaluating on VALIDATION DATASET")
     flags = [True, False]
-    thresholds = [0.50, 0.55, 0.60, 0.65]
+    thresholds = [0.50,0.53, 0.55,0.58, 0.60, 0.65]
 
-    for use_lstm, use_lr,use_cnn in product(flags, flags, flags):
-        if not any([use_lstm, use_lr,use_cnn]):
+    for use_lstm,use_cnn in product(flags, flags):
+        if not any([use_lstm,use_cnn]):
             continue
 
-        for threshold, lr_threshold ,cnn_threshold in product(
+        for threshold,cnn_threshold in product(
                 thresholds if use_lstm else [0.50],
-                thresholds if use_lr else [0.50],
                 thresholds if use_cnn else [0.50],
 
         ):
             accuracy_confidence, r = conf_eval(
-                model, cnn_model, lr_model,val_loader,
+                model, cnn_model,val_loader,
 
-                use_lstm=use_lstm, use_cnn=use_cnn, use_lr=use_lr,
-                prop_threshold=threshold,cnn_threshold=cnn_threshold,lr_threshold=lr_threshold
+                use_lstm=use_lstm, use_cnn=use_cnn,
+                prop_threshold=threshold,cnn_threshold=cnn_threshold
             )
             insert_eval_results(eval_results["val"], r)
     save_eval_results(eval_results, dataset_dir)
@@ -604,7 +581,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
 
     train_ds = NumpyDataset(f"{outdir_path}/train_X.npy", f"{outdir_path}/train_y.npy", features_path,
-                            filter_noise=True)
+                            filter_noise=False)
     test_ds = NumpyDataset(f"{outdir_path}/test_X.npy", f"{outdir_path}/test_y.npy", features_path, filter_noise=False)
     X_train = torch.stack([train_ds[i][0] for i in range(len(train_ds))])
     X_test = torch.stack([test_ds[i][0] for i in range(len(test_ds))])
@@ -623,11 +600,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     joblib.dump(scaler, scaler_path)
     y_test = torch.stack([test_ds[i][1] for i in range(len(test_ds))])
 
-    up_ratio = y_test.mean().item()
 
-    # ===== ALWAYS-UP BASELINE =====
-
-    # Reshape back to original LSTM shape
     X_train = torch.from_numpy(Xtr_2d).float().view(Ntr, T, F)
     X_test = torch.from_numpy(Xte_2d).float().view(Nte, T, F)
     # ===== WRITE BACK INTO ORIGINAL DATASET STORAGE =====
@@ -641,9 +614,9 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     input_size = sample_x.shape[1]  # Number of features
     HIDDEN_SIZE = 32
     NUM_LAYERS = 2
-    DROPOUT = 0.3
+    DROPOUT = 0.4
     # Slightly larger model for better capacity
-    model = ImprovedLSTMModel(
+    model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
     ).to(device)
     optimizer = torch.optim.Adam(
@@ -699,15 +672,15 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     cnn_model = CNNModel(
         input_size=input_size,
-        num_filters=32,
-        kernel_size=4,
-        dropout=0.3,
+        num_filters=64,
+        kernel_size=5,
+        dropout=0.4,
     ).to(device)
     cnn_model_config = {
         "input_size": input_size,
         "num_filters": 32,  # Increased
-        "kernel_size": 4,  # Increased
-        "dropout": 0.3,  # Increased
+        "kernel_size": 5,  # Increased
+        "dropout": 0.4,  # Increased
     }
     with open(f"{dataset_dir}/cnn_model_config.json", "w") as f:
         json.dump(cnn_model_config, f)
@@ -734,8 +707,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
 
 
-    X_raw = np.load(x_path)
-    y_raw = np.load(y_path)
+
 
     # Use train+test portion (first 87.5% of data, same split as before)
     split_end = test_end  # already calculated above
@@ -747,15 +719,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     except ValueError:
         print("Warning: 'Close' not found in features, using index 3 as fallback")
         close_idx = 3
-    X_lr = X_raw[:split_end, -16:, :].reshape(split_end, -1)
-    Nx = len(X_lr)
-    X_lr = scaler.transform(X_lr.reshape(-1, F)).reshape(Nx, 16, F)
-    X_lr = X_lr.reshape(Nx, -1)
-    y_lr = (y_raw[:split_end] > X_raw[:split_end, -1, close_idx]).astype(int)  # same binary label logic
 
-    lr_model = LogisticRegression(C=0.1, max_iter=1000, class_weight="balanced")
-    lr_model.fit(X_lr, y_lr)
-    joblib.dump(lr_model, f"{dataset_dir}/{SEED}_lr_model.pkl")
     cnn_model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_cnn_model.pt"))
     cnn_model.eval()
     model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_binary_model.pt"))
@@ -840,7 +804,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
             cnn_cfg = json.load(f)
 
         input_size = cfg["input_size"]
-        lstm = ImprovedLSTMModel(input_size=input_size, hidden_size=cfg["hidden_size"],
+        lstm = LSTMModel(input_size=input_size, hidden_size=cfg["hidden_size"],
                                  num_layers=cfg["num_layers"], dropout=cfg["dropout"]).to(device)
         lstm.load_state_dict(torch.load(f"{dataset_dir}/{seed}_binary_model.pt", map_location=device))
         lstm.eval()
@@ -854,7 +818,6 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
 
         symbol_models[symbol] = {
             "lstm": lstm, "cnn": cnn,
-            "lr": joblib.load(f"{dataset_dir}/{seed}_lr_model.pkl"),
             "scaler": joblib.load(f"{dataset_dir}/scaler.pkl"),
         }
 
@@ -881,9 +844,6 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
         high_idx = cols.index('High')
 
     balance = 1000.0
-    peak_balance = balance
-    max_drawdown = 0
-    pause_until = 0
     open_trades = {symbol: [] for symbol in symbols}
     fill_stats = {symbol: {"attempts": 0, "filled": 0} for symbol in symbols}
     all_trade_logs = {symbol: {"direction": [], "entry": [], "exit": [], "pnl": [],"raw_pnl": [],
@@ -927,17 +887,8 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
                 else:
                     still_open.append(trade)
             open_trades[symbol] = still_open
-            peak_balance = max(peak_balance, balance)
-            drawdown = (peak_balance - balance) / peak_balance
-            if drawdown > 0.20:
 
-                pause_until = i + 56  # 56 × 3h = 7 days
-                peak_balance = balance  # reset so pause doesn't re-trigger immediately
-                print(f" [{candle_time}] DRAWDOWN {drawdown:.1%} — pausing all trading for 7 days")
-            if drawdown > max_drawdown:
-                max_drawdown = drawdown
-            if i < pause_until:
-                continue
+
             # Open trade if none open
             if len(open_trades[symbol]) < MAX_TRADES_PER_SYMBOL:
 
@@ -948,9 +899,9 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
                 window = feature_array[i - window_size:i]
                 X_scaled = scale_live_window(window, m["scaler"])
                 prediction = conf_eval_live(
-                    m["lstm"], m["cnn"],  m["lr"], X_scaled,
-                    c["use_cnn"], c["use_lstm"], c["use_lr"],
-                    c["prop_threshold"], c["cnn_threshold"], c["lr_threshold"]
+                    m["lstm"], m["cnn"], X_scaled,
+                    c["use_cnn"], c["use_lstm"],
+                    c["prop_threshold"], c["cnn_threshold"],
                 )
                 if prediction != -1:
                     fill_stats[symbol]["attempts"] += 1
@@ -961,7 +912,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
                     window_end = min(i + 4, min_len - 1)
                     next_candles = feature_array[i:window_end, :]
 
-                    dip_pct = c["DIP_PCT"] * 0.7
+                    dip_pct = c["DIP_PCT"] * 1.0
 
                     if direction == "LONG":
                         entry_price = candle_open * (1 - dip_pct)
@@ -1002,7 +953,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
             trade_log["total_invested"] = round(total_invested, 2)
             trade_log["total_returned"] = round(total_returned, 2)
             trade_log["total_profit"] = round(balance - 1000.0, 2)
-            trade_log["roi"] = round((balance - 1000.0) / 1000.0 * 100, 2)
+            trade_log["roi"] = round((balance - 1000.0) / 1000.0, 2)
             trade_log["final_balance"] = round(balance, 2)
             print(f"\n  {symbol} Summary:")
             print(f"  Trades: {len(pnls)} | Win rate: {trade_log['win_rate']}% | Avg PnL: {trade_log['avg_pnl']}%")
@@ -1016,11 +967,11 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
         else:
             print(f"  No trades taken for {symbol}")
 
-    with open("paper_trade_historical.json", "w") as f:
+    with open(f"{cutoff}_paper_trade_historical.json", "w") as f:
         json.dump(all_trade_logs, f, indent=2)
     print("\nSaved to paper_trade_historical.json")
     max_drawdown = min(1000,balance)/1000
-    return max_drawdown,trade_log["roi"]
+    return (1-max_drawdown),trade_log["roi"]
 
 
 def test_live(training_time,config,resample_hours,window_days,horizon):
@@ -1037,7 +988,7 @@ def test_live(training_time,config,resample_hours,window_days,horizon):
 
         input_size = cfg["input_size"]
 
-        lstm = ImprovedLSTMModel(input_size=input_size, hidden_size=cfg["hidden_size"],
+        lstm = LSTMModel(input_size=input_size, hidden_size=cfg["hidden_size"],
                                  num_layers=cfg["num_layers"], dropout=cfg["dropout"]).to(device)
         lstm.load_state_dict(torch.load(f"{dataset_dir}/42_binary_model.pt", map_location=device))
         lstm.eval()
@@ -1052,7 +1003,6 @@ def test_live(training_time,config,resample_hours,window_days,horizon):
         symbol_models[s] = {
             "lstm": lstm,
             "cnn": cnn,
-            "lr": joblib.load(f"{dataset_dir}/42_lr_model.pkl"),
             "scaler": joblib.load(f"{dataset_dir}/scaler.pkl"),
         }
 
