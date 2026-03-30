@@ -199,6 +199,10 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     # Dodaj małą stałą aby uniknąć dzielenia przez 0
     df_resampled['volume_zscore'] = (df_resampled['Volume'] - volume_mean) / (volume_std + 1e-8)
     df_resampled['volume_zscore'] = df_resampled['volume_zscore'].clip(-5, 5)
+    funding_mean = df_resampled['funding_rate'].rolling(window=224,min_periods=1).mean()
+    funding_std = df_resampled['funding_rate'].rolling(window=224,min_periods=1).std()
+    df_resampled['funding_z'] = (df_resampled['funding_rate']-funding_mean)/(funding_std+1e-10)
+    df_resampled['funding_z'] = df_resampled['volume_zscore'].clip(-5,5)
     df_resampled['local_ATH'] = df_resampled['Close'].rolling(window=224, min_periods=1).max()
     df_resampled['local_ATL'] = df_resampled['Close'].rolling(window=224, min_periods=1).min()
     df_resampled['pct_change'] = df_resampled['Close'].pct_change(periods=3,fill_method=None)
@@ -218,9 +222,6 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     cumsum_not_atl = not_atl.cumsum()
     last_atl_cumsum = cumsum_not_atl.where(is_atl).ffill().fillna(0)
     df_resampled['time_local_Low'] = cumsum_not_atl - last_atl_cumsum
-
-
-    df_resampled['log_return_1h'] = np.log(df_resampled['Close'] / df_resampled['Close'].shift(1)).fillna(0)
 
     # 2. VOLATILITY RATIO (short-term vs long-term volatility)
     # Short-term volatility (6 periods = ~1.5 days for 6h candles)
@@ -257,7 +258,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','time_local_Low','time_local_High','pct_change', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','log_return_1h','bb_upper','bb_lower','Open','Number of Trades','Volume'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','funding_rate','bb_position','bb_width','time_local_Low','time_local_High','pct_change', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Number of Trades','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()
