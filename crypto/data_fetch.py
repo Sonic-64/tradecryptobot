@@ -226,7 +226,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     # 2. VOLATILITY RATIO (short-term vs long-term volatility)
     # Short-term volatility (6 periods = ~1.5 days for 6h candles)
 
-    df_resampled['trend_slope_long'] = rolling_slope(df_resampled['Close'], window=224)
+    df_resampled['trend_slope_long'] = rolling_slope(df_resampled['Close'], window=112)
     # 3. VOLUME-PRICE CORRELATION (smart money detection)
     # 20-period rolling correlation between volume and price
     delta = df_resampled['Close'].diff()
@@ -493,7 +493,7 @@ def build_windows(
 def get_evaluate_window(symbol:str,window_days:int,resample_hours:int):
     steps_per_day = 24 // resample_hours
     window_steps = window_days * steps_per_day
-    df = download_data(symbol,(window_days*60))
+    df = download_data(symbol,(window_days*2))
     df_c,_ = compute_features(df,resample_hours=resample_hours)
     window_df = df_c.iloc[-window_steps:]
 

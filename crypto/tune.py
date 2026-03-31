@@ -47,10 +47,10 @@ def load_eval_results(dataset_dir):
 
     return data
 def insert_eval_results(row,new_result):
-    key = (new_result['use_lstm'],new_result['threshold'],new_result["use_RSI"],new_result["use_funding"],new_result["use_trend"],new_result["use_buy_ratio"],new_result["trend_follow"])
+    key = (new_result['use_lstm'], new_result['use_cnn'],new_result['threshold'],new_result['cnn_threshold'])
 
     for existing in row:
-        existing_key = (existing['use_lstm'],existing['threshold'],existing["use_RSI"],existing["use_funding"],existing["use_trend"],existing["use_buy_ratio"],existing["trend_follow"])
+        existing_key = (existing['use_lstm'], existing['use_cnn'],existing['threshold'],existing['cnn_threshold'])
         if existing_key == key:
             existing['accuracy'].append(new_result['accuracy'])
             existing['num_trades'].append(new_result['num_trades'])
@@ -73,12 +73,9 @@ def insert_eval_results(row,new_result):
     score = _compute_score(new_result['accuracy'], new_result['coverage_pct'])
     row.append({
         'use_lstm': new_result['use_lstm'],
+        'use_cnn': new_result['use_cnn'],
         'threshold':new_result['threshold'],
-        'use_RSI':new_result['use_RSI'],
-        'use_funding':new_result['use_funding'],
-        'use_trend':new_result['use_trend'],
-        'use_buy_ratio':new_result['use_buy_ratio'],
-        'trend_follow':new_result['trend_follow'],
+        'cnn_threshold':new_result['cnn_threshold'],
         'accuracy': new_result['accuracy'],
         'accuracy_avg':new_result['accuracy'],
         'accuracy_avg_weighted':new_result['accuracy'],
@@ -98,12 +95,9 @@ def get_best_config(dataset_dir,get_acc=False):
     row = eval_results["val"]
     result = {
         "use_lstm": False,
+        "use_cnn": False,
         "prop_threshold": 0.0,
-        "use_RSI":False,
-        "use_funding":False,
-        "use_trend":False,
-        "use_buy_ratio":False,
-        "trend_follow":False,
+        "cnn_threshold":0.0,
         "accuracy": 0,
         "coverage": 0,
         "score":0,
@@ -123,13 +117,10 @@ def get_best_config(dataset_dir,get_acc=False):
             if exists['accuracy_avg_weighted'] > result['accuracy']:
                 result['accuracy'] = exists['accuracy_avg_weighted']
                 result['coverage'] = exists['coverage_avg']
-                result['use_RSI'] = exists['use_RSI']
-                result['use_funding'] = exists['use_funding']
-                result['use_trend'] = exists['use_trend']
-                result['use_buy_ratio'] = exists['use_buy_ratio']
-                result['trend_follow'] = exists['trend_follow']
+                result['use_cnn'] = exists['use_cnn']
                 result['use_lstm'] = exists['use_lstm']
                 result['prop_threshold'] = exists['threshold']
+                result['cnn_threshold'] = exists['cnn_threshold']
                 result['score'] = exists['score']
         else:
             if exists['score'] is None:
@@ -137,13 +128,10 @@ def get_best_config(dataset_dir,get_acc=False):
             if exists['score'] > result['score']:
                 result['accuracy'] = exists['accuracy_avg_weighted']
                 result['coverage'] = exists['coverage_avg']
-                result['use_RSI'] = exists['use_RSI']
-                result['use_funding'] = exists['use_funding']
-                result['use_trend'] = exists['use_trend']
-                result['use_buy_ratio'] = exists['use_buy_ratio']
-                result['trend_follow'] = exists['trend_follow']
+                result['use_cnn'] = exists['use_cnn']
                 result['use_lstm'] = exists['use_lstm']
                 result['prop_threshold'] = exists['threshold']
+                result['cnn_threshold'] = exists['cnn_threshold']
                 result['score'] = exists['score']
     print(json.dumps(result, indent=2))
     return result

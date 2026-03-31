@@ -72,7 +72,6 @@ def train(
         class_criterion,
         optimizer,
         device,
-        clip:float = 1.0
 ):
     model.train()
     total_loss = 0.0
@@ -86,7 +85,6 @@ def train(
         loss = loss_class
 
         loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), clip)
         optimizer.step()
         total_loss += loss.item() * xb.size(0)
     return total_loss / len(loader.dataset)
@@ -126,32 +124,12 @@ def evaluate(model, loader, class_criterion, device):
 
 
 
-def eval_TI(xb,features,use_RSI,use_funding,use_trend,use_buy_ratio):
-    funding_idx = features.index('funding_z')
-    buy_ratio_idx = features.index('taker_buy_ratio')
-    trend_idx = features.index('trend_slope_long')
-    rsi_idx = features.index('RSI')
-    funding_avg = xb[-8:, funding_idx].mean()
-    buy_ratio_avg = xb[-8, buy_ratio_idx].mean()
-    RSI = float(xb[-1,rsi_idx])
-    trend = float(xb[-1,trend_idx])
 
-    funding_bearish = funding_avg < -1 if use_funding else True #mass longs
-    funding_bullish = funding_avg > 1 if use_funding else True ## mass shorts
-    trend_bullish = trend > 0 if use_trend else True
-    trend_bearish = trend < 0 if use_trend else True
-    RSI_bearish = RSI < 30 if use_RSI else True
-    RSI_bullish = RSI > 70 if use_RSI else True
-
-    buy_ratio_bearish = buy_ratio_avg < 0.47 if use_buy_ratio else True
-    buy_ratio_bullish = buy_ratio_avg > 0.53 if use_buy_ratio else True
-
-    LONG_signal = (buy_ratio_bullish and RSI_bullish and trend_bullish and funding_bullish)
-    SHORT_signal = (buy_ratio_bearish and RSI_bearish and trend_bearish and funding_bearish)
-    return LONG_signal,SHORT_signal
+# # --- Main function to run the training and evaluation to call from main.py ---
 
 
-def conf_eval(model,loader,scaler,features,use_RSI=True,use_funding=True,use_trend=True,use_buy_ratio=True,trend_follow=True,use_lstm=True,prop_threshold=0.50,label=""):
+
+def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50,label=""):
     accuracy_confidence = 0.5
     all_predictions = []
     with torch.no_grad():
@@ -162,28 +140,22 @@ def conf_eval(model,loader,scaler,features,use_RSI=True,use_funding=True,use_tre
             logits = model(xb)  # ignorujemy price z class_model
             prob_up = torch.sigmoid(logits)
 
+            logits_cnn = cnn_model(xb)
+            prop_cnn = torch.sigmoid(logits_cnn)
 
-            B, T, F = xb.shape
 
-            # ── unscale entire batch for regime checks ─
-            xb_np = xb.numpy().reshape(B * T, F)
-            xb_raw = scaler.inverse_transform(xb_np).reshape(B, T, F)
-
+            # Przenieś na CPU
             prob_up = prob_up.cpu().numpy().flatten()
+            prop_cnn = prop_cnn.cpu().numpy().flatten()
             last_candle = xb[:, -1, :].cpu().numpy()
             # Zapisz wszystko
             for i in range(len(prob_up)):
-                if trend_follow:
-                    TI_long, TI_short = eval_TI(xb_raw[i],features, use_RSI, use_funding, use_trend, use_buy_ratio)
-                else:
-                    TI_short, TI_long = eval_TI(xb_raw[i],features, use_RSI, use_funding, use_trend, use_buy_ratio)
                 all_predictions.append({
                     'prob_up': prob_up[i],
+                    'prob_up_cnn': prop_cnn[i],
                     'actual_class': y_class[i],
                     'actual_change':y_change[i],
-                    'last_candle':last_candle[i],
-                    'TI_short':TI_short,
-                    'TI_long':TI_long
+                    'last_candle':last_candle[i]
                 })
 
 
@@ -193,14 +165,14 @@ def conf_eval(model,loader,scaler,features,use_RSI=True,use_funding=True,use_tre
     changes = []
 
     for p in all_predictions:
+        cnn_long = p['prob_up_cnn'] > cnn_threshold if use_cnn else True
+        cnn_short = p['prob_up_cnn'] < (1-cnn_threshold) if use_cnn else True
         lstm_long = p['prob_up'] > prop_threshold if use_lstm else True
         lstm_short = p['prob_up'] < (1-prop_threshold) if use_lstm else True
-        TI_short = p['TI_short']
-        TI_long = p['TI_long']
-        predict_long = (lstm_long  and TI_long)
+        predict_long = (lstm_long and cnn_long)
 
                 # Short: oba modele przewidują spadek
-        predict_short = (lstm_short  and TI_short)
+        predict_short = (lstm_short and cnn_short )
 
         if predict_long or predict_short:
 
@@ -213,12 +185,9 @@ def conf_eval(model,loader,scaler,features,use_RSI=True,use_funding=True,use_tre
     result = {
         "label": label,
         "use_lstm": use_lstm,
-        "use_RSI": use_RSI,
-        "use_trend":use_trend,
-        "use_buy_ratio":use_buy_ratio,
-        "use_funding":use_funding,
-        "trend_follow":trend_follow,
+        "use_cnn": use_cnn,
         "threshold":prop_threshold,
+        "cnn_threshold":cnn_threshold,
         "num_trades": len(correct_trades),
         "total_samples": len(all_predictions),
         "coverage_pct": round(len(correct_trades) / len(all_predictions) * 100, 2) if all_predictions else 0,
@@ -262,6 +231,8 @@ def conf_eval_live(model,cnn_model,xb,use_cnn=True,use_lstm=True,prop_threshold=
 
 
     for p in result:
+        cnn_long = p['prob_up_cnn'] > cnn_threshold if use_cnn else True
+        cnn_short = p['prob_up_cnn'] < (1-cnn_threshold) if use_cnn else True
         lstm_long = p['prob_up'] > prop_threshold if use_lstm else True
         lstm_short = p['prob_up'] < (1-prop_threshold) if use_lstm else True
         predict_long = (lstm_long and cnn_long )
@@ -328,9 +299,9 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
     save_split(X_raw[test_end:val_end], y_raw[test_end:val_end], dataset_dir, "val")
 
-    train_ds = NumpyDataset(f"{outdir_path}/train_X.npy",f"{outdir_path}/train_y.npy",features_path,filter_noise=True)
-    test_ds = NumpyDataset(f"{outdir_path}/test_X.npy",f"{outdir_path}/test_y.npy",features_path,filter_noise=True)
-    val_ds = NumpyDataset(f"{outdir_path}/val_X.npy",f"{outdir_path}/val_y.npy",features_path,filter_noise=True)
+    train_ds = NumpyDataset(f"{outdir_path}/train_X.npy",f"{outdir_path}/train_y.npy",features_path,filter_noise=False)
+    test_ds = NumpyDataset(f"{outdir_path}/test_X.npy",f"{outdir_path}/test_y.npy",features_path,filter_noise=False)
+    val_ds = NumpyDataset(f"{outdir_path}/val_X.npy",f"{outdir_path}/val_y.npy",features_path,filter_noise=False)
     X_train = torch.stack([train_ds[i][0] for i in range(len(train_ds))])
     X_val = torch.stack([val_ds[i][0] for i in range(len(val_ds))])
     X_test = torch.stack([test_ds[i][0] for i in range(len(test_ds))])
@@ -374,16 +345,16 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
-    HIDDEN_SIZE = 16
+    HIDDEN_SIZE = 32
     NUM_LAYERS = 2
-    DROPOUT = 0.6
-
+    KERNEL_SIZE = 5
+    DROPOUT = 0.5
     # Slightly larger model for better capacity
     model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
     ).to(device)
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=LR, weight_decay=1e-2
+        model.parameters(), lr=LR, weight_decay=1e-3
     )  # Add weight decay
 
     # Learning rate scheduler
@@ -402,6 +373,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     best_acc = 0.0
     patience = 50
     patience_counter = 0
+    best_brier = 1
     print("Starting training with  class accuracy focus...\n")
     for epoch in range(1, EPOCHS + 1):
         # Emphasize classification more heavily (alpha=2.0 vs beta=0.5)
@@ -438,6 +410,44 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     print(f"Model saved as {dataset_dir}/{SEED}_binary_model.pt with accuracy: {best_acc:.2%}\n")
 
+    best_mse = 64.0
+    patience = 20
+    patience_counter = 0
+    cnn_model = CNNModel(
+        input_size=input_size,
+        num_filters=HIDDEN_SIZE,
+        kernel_size=KERNEL_SIZE,
+        dropout=DROPOUT,
+    ).to(device)
+    cnn_model_config = {
+        "input_size": input_size,
+        "num_filters": HIDDEN_SIZE,  # Increased
+        "kernel_size": KERNEL_SIZE,  # Increased
+        "dropout": DROPOUT,  # Increased
+    }
+    with open(f"{dataset_dir}/cnn_model_config.json", "w") as f:
+        json.dump(cnn_model_config, f)
+    cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=LR, weight_decay=1e-3)
+    cnn_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(cnn_optimizer, T_max=EPOCHS)
+    cnn_criterion = BCEWithLogitsLoss()
+    patience = 50
+    patience_counter = 0
+    best_acc = 0
+    for epoch in range(1, EPOCHS + 1):
+        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device)
+        _, test_acc = evaluate(cnn_model, test_loader, cnn_criterion, device)
+        cnn_scheduler.step()
+
+        if test_acc > best_acc:
+            best_acc = test_acc
+            patience_counter = 0
+            torch.save(cnn_model.state_dict(), f"{dataset_dir}/{SEED}_cnn_model.pt")
+        else:
+            patience_counter += 1
+        if patience_counter >= patience:
+            break
+
+    print(f"Model saved as {dataset_dir}/{SEED}_cnn_model.pt with accuracy: {best_acc:.2%}\n")
 
 
 
@@ -451,7 +461,8 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         print("Warning: 'Close' not found in features, using index 3 as fallback")
         close_idx = 3
 
-
+    cnn_model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_cnn_model.pt"))
+    cnn_model.eval()
     model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_binary_model.pt"))
     model.eval()
 
@@ -471,23 +482,27 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     _, train_acc = evaluate(model, train_loader, criterion, device)
     _, test_acc = evaluate(model, test_loader, criterion, device)
     print(f" LSTM train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}")
+    _, train_acc = evaluate(model, train_loader, criterion, device)
+    _, test_acc = evaluate(model, test_loader, criterion, device)
+    print(f" CNN train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}")
     print(f"Evaluating on VALIDATION DATASET")
     flags = [True, False]
-    thresholds = [0.50, 0.55, 0.60]
+    thresholds = [0.50,0.53, 0.55,0.58, 0.60, 0.65]
 
-    for use_lstm,use_RSI,use_trend,use_funding,use_buy_ratio,trend_follow in product(flags, flags,flags,flags,flags,flags):
-        if not any([use_lstm,use_RSI,use_trend,use_funding,use_buy_ratio,trend_follow]):
+    for use_lstm,use_cnn in product(flags, flags):
+        if not any([use_lstm,use_cnn]):
             continue
 
-        for threshold in product(
+        for threshold,cnn_threshold in product(
                 thresholds if use_lstm else [0.50],
+                thresholds if use_cnn else [0.50],
 
         ):
             accuracy_confidence, r = conf_eval(
-                model,scaler,features=feature_names,loader = val_loader,
-use_RSI=use_RSI,use_funding=use_funding,use_trend=use_trend,use_buy_ratio=use_buy_ratio,trend_follow=trend_follow,
-                use_lstm=use_lstm,
-                prop_threshold=threshold
+                model, cnn_model,val_loader,
+
+                use_lstm=use_lstm, use_cnn=use_cnn,
+                prop_threshold=threshold,cnn_threshold=cnn_threshold
             )
             insert_eval_results(eval_results["val"], r)
     save_eval_results(eval_results, dataset_dir)
@@ -567,8 +582,8 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
 
     train_ds = NumpyDataset(f"{outdir_path}/train_X.npy", f"{outdir_path}/train_y.npy", features_path,
-                            filter_noise=True)
-    test_ds = NumpyDataset(f"{outdir_path}/test_X.npy", f"{outdir_path}/test_y.npy", features_path, filter_noise=True)
+                            filter_noise=False)
+    test_ds = NumpyDataset(f"{outdir_path}/test_X.npy", f"{outdir_path}/test_y.npy", features_path, filter_noise=False)
     X_train = torch.stack([train_ds[i][0] for i in range(len(train_ds))])
     X_test = torch.stack([test_ds[i][0] for i in range(len(test_ds))])
     # ===== RESHAPE AND SCALE FEATURES =====
@@ -598,15 +613,16 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
-    HIDDEN_SIZE = 16
+    HIDDEN_SIZE = 32
     NUM_LAYERS = 2
-    DROPOUT = 0.6
+    KERNEL_SIZE = 5
+    DROPOUT = 0.5
     # Slightly larger model for better capacity
     model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
     ).to(device)
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=LR, weight_decay=1e-2
+        model.parameters(), lr=LR, weight_decay=1e-3
     )  # Add weight decay
 
     # Learning rate scheduler
@@ -656,6 +672,41 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     # Load best model for final save
 
+    cnn_model = CNNModel(
+        input_size=input_size,
+        num_filters=HIDDEN_SIZE,
+        kernel_size=KERNEL_SIZE,
+        dropout=DROPOUT,
+    ).to(device)
+    cnn_model_config = {
+        "input_size": input_size,
+        "num_filters": HIDDEN_SIZE,  # Increased
+        "kernel_size": KERNEL_SIZE,  # Increased
+        "dropout": DROPOUT,  # Increased
+    }
+    with open(f"{dataset_dir}/cnn_model_config.json", "w") as f:
+        json.dump(cnn_model_config, f)
+    cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=LR, weight_decay=1e-3)
+    cnn_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(cnn_optimizer, T_max=EPOCHS)
+    cnn_criterion = BCEWithLogitsLoss()
+    patience = 50
+    patience_counter = 0
+    best_acc = 0
+    for epoch in range(1, EPOCHS + 1):
+        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device)
+        _, test_acc = evaluate(cnn_model, test_loader, cnn_criterion, device)
+        cnn_scheduler.step()
+
+        if test_acc > best_acc:
+            best_acc = test_acc
+            patience_counter = 0
+            torch.save(cnn_model.state_dict(), f"{dataset_dir}/{SEED}_cnn_model.pt")
+        else:
+            patience_counter += 1
+        if patience_counter >= patience:
+            break
+
+
 
 
 
@@ -671,6 +722,8 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         print("Warning: 'Close' not found in features, using index 3 as fallback")
         close_idx = 3
 
+    cnn_model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_cnn_model.pt"))
+    cnn_model.eval()
     model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_binary_model.pt"))
     model.eval()
 
@@ -749,6 +802,8 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
         # Load models
         with open(f"{dataset_dir}/model_config.json") as f:
             cfg = json.load(f)
+        with open(f"{dataset_dir}/cnn_model_config.json") as f:
+            cnn_cfg = json.load(f)
 
         input_size = cfg["input_size"]
         lstm = LSTMModel(input_size=input_size, hidden_size=cfg["hidden_size"],
@@ -756,10 +811,15 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
         lstm.load_state_dict(torch.load(f"{dataset_dir}/{seed}_binary_model.pt", map_location=device))
         lstm.eval()
 
+        cnn = CNNModel(input_size=input_size, num_filters=cnn_cfg["num_filters"],
+                       kernel_size=cnn_cfg["kernel_size"], dropout=cnn_cfg["dropout"]).to(device)
+        cnn.load_state_dict(torch.load(f"{dataset_dir}/{seed}_cnn_model.pt", map_location=device))
+        cnn.eval()
+
 
 
         symbol_models[symbol] = {
-            "lstm": lstm,
+            "lstm": lstm, "cnn": cnn,
             "scaler": joblib.load(f"{dataset_dir}/scaler.pkl"),
         }
 
@@ -841,9 +901,9 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
                 window = feature_array[i - window_size:i]
                 X_scaled = scale_live_window(window, m["scaler"])
                 prediction = conf_eval_live(
-                    m["lstm"], X_scaled,
-                     c["use_lstm"],
-                    c["prop_threshold"]
+                    m["lstm"], m["cnn"], X_scaled,
+                    c["use_cnn"], c["use_lstm"],
+                    c["prop_threshold"], c["cnn_threshold"],
                 )
                 if prediction != -1:
                     fill_stats[symbol]["attempts"] += 1
@@ -892,8 +952,6 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
             trade_log["num_trades"] = len(pnls)
             trade_log["win_rate"] = round(wins / len(pnls) * 100, 2)
             trade_log["avg_pnl"] = round(sum(pnls) / len(pnls), 4)
-            trade_log["total_invested"] = round(total_invested, 2)
-            trade_log["total_returned"] = round(total_returned, 2)
             trade_log["total_profit"] = round(balance - 1000.0, 2)
             trade_log["roi"] = round((balance - 1000.0) / 1000.0, 2)
             trade_log["final_balance"] = round(balance, 2)
@@ -975,7 +1033,6 @@ def test_live(training_time,config,resample_hours,window_days,horizon):
 
                 time.sleep(int(3500*resample_hours))
     return
-
 
 
 
