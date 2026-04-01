@@ -9,7 +9,54 @@ import json
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+class WeightedBCELoss(nn.Module):
+    """
+    BCEWithLogitsLoss weighted by absolute price change magnitude.
 
+    Intuition:
+      a 3% move predicted correctly matters more than a 0.5% move
+      model should focus capacity on the large moves that drive PnL
+
+    Weight formula:
+      weight = clip(abs(price_change) * scale, min_w, max_w)
+
+      scale=20:  0.5% move → weight 0.10 (min)
+                 1.2% move → weight 0.24
+                 3.0% move → weight 0.60
+                 5.0% move → weight 1.00
+                 8.0% move → weight 1.60
+                 capped at max_w=2.0
+    """
+
+    def __init__(
+        self,
+        scale:  float = 20.0,   # multiplier on raw price change
+        min_w:  float = 0.25,   # floor — never fully ignore small moves
+        max_w:  float = 2.0,    # ceiling — don't let outliers dominate
+    ):
+        super().__init__()
+        self.scale = scale
+        self.min_w = min_w
+        self.max_w = max_w
+
+    def forward(
+        self,
+        logits:       torch.Tensor,   # (B, 1) raw logits
+        labels:       torch.Tensor,   # (B, 1) binary 0/1
+        price_changes: torch.Tensor,  # (B, 1) raw price change ratio
+    ) -> torch.Tensor:
+
+        # per-sample BCE (unreduced)
+        bce = nn.functional.binary_cross_entropy_with_logits(
+            logits, labels, reduction='none'
+        )   # (B, 1)
+
+        # weight = f(|price_change|)
+        weights = (price_changes.abs() * self.scale).clamp(
+            self.min_w, self.max_w
+        )   # (B, 1)
+
+        return (bce * weights).mean()
 # Version with both improvements but simpler combination
 class ImprovedLSTMModel(nn.Module):
     """

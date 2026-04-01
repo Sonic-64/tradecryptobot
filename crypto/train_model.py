@@ -19,7 +19,7 @@ from pathlib import Path
 
 from . import analyze_days
 from .tune import  save_eval_results, insert_eval_results, load_eval_results,get_best_config
-from .model import LSTMModel,CNNModel,FocalLoss
+from .model import LSTMModel,CNNModel,WeightedBCELoss
 from .data_fetch import (
     make_dataset,
     get_evaluate_window,
@@ -66,27 +66,32 @@ class NumpyDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.X[idx], self.y_class[idx].unsqueeze(0), self.y_change[idx].unsqueeze(0)
-def train(
-        model,
-        loader,
-        class_criterion,
-        optimizer,
-        device,
-):
+def train(model, loader, criterion, optimizer,
+          device, clip: float = 1.0,
+          weighted: bool = False):
     model.train()
     total_loss = 0.0
-    for xb, y_class, _ in loader:
-        xb, y_class = xb.to(device), y_class.to(device)
+
+    for xb, y_class, y_change in loader:   # ← unpack y_change
+        xb, y_class, y_change = (
+            xb.to(device),
+            y_class.to(device),
+            y_change.to(device),
+        )
         optimizer.zero_grad()
         logits = model(xb)
 
-        # Use raw logits for Focal Loss (it applies sigmoid internally)
-        loss_class = class_criterion(logits, y_class)
-        loss = loss_class
+        if weighted:
+            criterion = WeightedBCELoss(scale=42.0, min_w=0.25, max_w=2.0)
+            loss = criterion(logits, y_class,y_change)
+        else:
+            loss = criterion(logits, y_class)
 
         loss.backward()
+        nn.utils.clip_grad_norm_(model.parameters(), clip)
         optimizer.step()
         total_loss += loss.item() * xb.size(0)
+
     return total_loss / len(loader.dataset)
 
 
@@ -118,6 +123,47 @@ def evaluate(model, loader, class_criterion, device):
     return avg_loss, accuracy
 
 
+def evaluate_weighted(model, loader, device,
+                      scale=42.0, min_w=0.25, max_w=2.0):
+    """
+    Two metrics:
+    1. weighted accuracy  — accuracy weighted by move size
+                           matches what training optimized
+                           use for early stopping
+    """
+    model.eval()
+
+    weighted_correct = 0.0
+    weighted_total = 0.0
+
+    plain_correct = 0
+    plain_total = 0
+
+    with torch.no_grad():
+        for xb, y_class, y_change in loader:
+            xb = xb.to(device)
+            y_class = y_class.to(device)
+            y_change = y_change.to(device)
+
+            logits = model(xb)
+            probs = torch.sigmoid(logits)
+            preds = (probs > 0.5).float()
+            correct = (preds == y_class).float()  # (B, 1)
+
+            # weights — same formula as WeightedBCELoss
+            weights = (y_change.abs() * scale).clamp(min_w, max_w)
+
+            # weighted accuracy
+            weighted_correct += (correct * weights).sum().item()
+            weighted_total += weights.sum().item()
+
+            plain_correct += correct.sum().item()
+            plain_total += len(y_class)
+
+    weighted_acc = weighted_correct / (weighted_total + 1e-8)
+    plain_acc = plain_correct / (plain_total + 1e-8)
+
+    return weighted_acc, plain_acc
 
 
 
@@ -199,8 +245,6 @@ def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0
 
         accuracy_confidence = sum(correct_trades)/len(correct_trades)
         result["accuracy"] = round(accuracy_confidence * 100, 2)
-        result["mean_change"] = round(float(np.mean(changes)) * 100, 4)
-        result["median_change"] = round(float(np.median(changes)) * 100, 4)
 
     return accuracy_confidence,result
 def conf_eval_live(model,cnn_model,xb,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50):
@@ -345,10 +389,10 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
-    HIDDEN_SIZE = 32
+    HIDDEN_SIZE = 16
     NUM_LAYERS = 2
-    KERNEL_SIZE = 5
-    DROPOUT = 0.5
+    KERNEL_SIZE = 4
+    DROPOUT = 0.4
     # Slightly larger model for better capacity
     model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
@@ -373,7 +417,6 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     best_acc = 0.0
     patience = 50
     patience_counter = 0
-    best_brier = 1
     print("Starting training with  class accuracy focus...\n")
     for epoch in range(1, EPOCHS + 1):
         # Emphasize classification more heavily (alpha=2.0 vs beta=0.5)
@@ -382,10 +425,10 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
             train_loader,
             class_criterion,
             optimizer,
-            device,
+            device,weighted=True
         )
-        _,test_acc  = evaluate(
-            model, test_loader, class_criterion, device
+        test_acc,plain_acc  = evaluate_weighted(
+            model, test_loader, device
         )
 
         # Step the scheduler
@@ -410,9 +453,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     print(f"Model saved as {dataset_dir}/{SEED}_binary_model.pt with accuracy: {best_acc:.2%}\n")
 
-    best_mse = 64.0
-    patience = 20
-    patience_counter = 0
+
     cnn_model = CNNModel(
         input_size=input_size,
         num_filters=HIDDEN_SIZE,
@@ -435,7 +476,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     best_acc = 0
     for epoch in range(1, EPOCHS + 1):
         train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device)
-        _, test_acc = evaluate(cnn_model, test_loader, cnn_criterion, device)
+        test_acc,plain_acc = evaluate_weighted(cnn_model, test_loader, device)
         cnn_scheduler.step()
 
         if test_acc > best_acc:
@@ -455,58 +496,24 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     with open(features_path, 'r') as f:
         feature_names = json.load(f)
 
-    try:
-        close_idx = feature_names.index('Close')
-    except ValueError:
-        print("Warning: 'Close' not found in features, using index 3 as fallback")
-        close_idx = 3
+
 
     cnn_model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_cnn_model.pt"))
     cnn_model.eval()
     model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_binary_model.pt"))
     model.eval()
-
+    criterion = BCEWithLogitsLoss()
+    weighted_train, train_acc = evaluate_weighted(model, train_loader, device)
+    weighted_test, test_acc = evaluate_weighted(model, test_loader, device)
+    print(f" LSTM train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}  weighted LSTM train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
+    weighted_train, train_acc = evaluate_weighted(cnn_model, train_loader, device)
+    weighted_test, test_acc = evaluate_weighted(cnn_model, test_loader,device)
+    print(f" CNN train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}  weighted CNN train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
     evalpath = Path(dataset_dir) / "eval_results.json"
 
-    if evalpath.exists() and evalpath.stat().st_size > 0:
-        eval_results = load_eval_results(dataset_dir)
-    else:
-        eval_results = {
-            "symbol": dataset_dir,
-            "test": [],
-            "val": [],
-            "metamodel": []
 
-        }
-    criterion = nn.BCEWithLogitsLoss()
-    _, train_acc = evaluate(model, train_loader, criterion, device)
-    _, test_acc = evaluate(model, test_loader, criterion, device)
-    print(f" LSTM train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}")
-    _, train_acc = evaluate(model, train_loader, criterion, device)
-    _, test_acc = evaluate(model, test_loader, criterion, device)
-    print(f" CNN train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}")
     print(f"Evaluating on VALIDATION DATASET")
-    flags = [True, False]
-    thresholds = [0.50,0.53, 0.55,0.58, 0.60, 0.65]
 
-    for use_lstm,use_cnn in product(flags, flags):
-        if not any([use_lstm,use_cnn]):
-            continue
-
-        for threshold,cnn_threshold in product(
-                thresholds if use_lstm else [0.50],
-                thresholds if use_cnn else [0.50],
-
-        ):
-            accuracy_confidence, r = conf_eval(
-                model, cnn_model,val_loader,
-
-                use_lstm=use_lstm, use_cnn=use_cnn,
-                prop_threshold=threshold,cnn_threshold=cnn_threshold
-            )
-            insert_eval_results(eval_results["val"], r)
-    save_eval_results(eval_results, dataset_dir)
-    get_best_config(dataset_dir)
 
     symbol = dataset_dir.split("_")[0]
     print(f"STATS FOR {symbol}")
@@ -613,10 +620,10 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
-    HIDDEN_SIZE = 32
+    HIDDEN_SIZE = 16
     NUM_LAYERS = 2
-    KERNEL_SIZE = 5
-    DROPOUT = 0.5
+    KERNEL_SIZE = 4
+    DROPOUT = 0.4
     # Slightly larger model for better capacity
     model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
@@ -648,10 +655,10 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
             train_loader,
             class_criterion,
             optimizer,
-            device,
+            device,weighted=True
         )
-        _, test_acc = evaluate(
-            model, test_loader, class_criterion, device
+        test_acc,plain_acc = evaluate_weighted(
+            model, test_loader,  device
         )
 
         # Step the scheduler
@@ -693,8 +700,8 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     patience_counter = 0
     best_acc = 0
     for epoch in range(1, EPOCHS + 1):
-        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device)
-        _, test_acc = evaluate(cnn_model, test_loader, cnn_criterion, device)
+        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device,weighted=True)
+        test_acc,plain_acc = evaluate_weighted(cnn_model, test_loader,  device)
         cnn_scheduler.step()
 
         if test_acc > best_acc:

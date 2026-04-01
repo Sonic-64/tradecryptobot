@@ -258,7 +258,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','funding_rate','bb_position','bb_width','time_local_Low','time_local_High','pct_change', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Number of Trades','Volume'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','funding_rate','hour','bb_position','bb_width','time_local_Low','time_local_High','pct_change', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Number of Trades','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()
