@@ -1,1 +1,1 @@
-{"input_size": 10, "num_filters": 16, "kernel_size": 5, "dropout": 0.4}
+{"input_size": 12, "num_filters": 16, "kernel_size": 4, "dropout": 0.5}

@@ -82,7 +82,7 @@ def train(model, loader, criterion, optimizer,
         logits = model(xb)
 
         if weighted:
-            criterion = WeightedBCELoss(scale=42.0, min_w=0.25, max_w=2.0)
+            criterion = WeightedBCELoss(scale=60.0, min_w=0.20, max_w=3.0)
             loss = criterion(logits, y_class,y_change)
         else:
             loss = criterion(logits, y_class)
@@ -124,7 +124,7 @@ def evaluate(model, loader, class_criterion, device):
 
 
 def evaluate_weighted(model, loader, device,
-                      scale=42.0, min_w=0.25, max_w=2.0):
+                      scale=60.0, min_w=0.20, max_w=3.0):
     """
     Two metrics:
     1. weighted accuracy  — accuracy weighted by move size
@@ -193,7 +193,6 @@ def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0
             # Przenieś na CPU
             prob_up = prob_up.cpu().numpy().flatten()
             prop_cnn = prop_cnn.cpu().numpy().flatten()
-            last_candle = xb[:, -1, :].cpu().numpy()
             # Zapisz wszystko
             for i in range(len(prob_up)):
                 all_predictions.append({
@@ -201,7 +200,6 @@ def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0
                     'prob_up_cnn': prop_cnn[i],
                     'actual_class': y_class[i],
                     'actual_change':y_change[i],
-                    'last_candle':last_candle[i]
                 })
 
 
@@ -222,7 +220,7 @@ def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0
 
         if predict_long or predict_short:
 
-            changes.append(abs(p['actual_change']))
+
             trades.append(p)
             predicted_direction = 1 if predict_long else 0
             actual_direction = 1 if p['actual_class'] > 0 else 0
@@ -238,13 +236,14 @@ def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0
         "total_samples": len(all_predictions),
         "coverage_pct": round(len(correct_trades) / len(all_predictions) * 100, 2) if all_predictions else 0,
         "accuracy": None,
-        "mean_change": None,
-        "median_change": None,
+        "accuracy_pure":None,
     }
     if trades:
 
         accuracy_confidence = sum(correct_trades)/len(correct_trades)
-        result["accuracy"] = round(accuracy_confidence * 100, 2)
+        result["accuracy_pure"] = round(accuracy_confidence * 100, 2)
+        accuracy_weighted = 0
+        result["accuracy"] = round(accuracy_weighted * 100,2)
 
     return accuracy_confidence,result
 def conf_eval_live(model,cnn_model,xb,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50):
@@ -336,8 +335,8 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     N_raw = len(X_raw)
 
     # Define boundaries on the FULL unfiltered data
-    train_end = int(0.70 * N_raw)
-    test_end = int(0.875 * N_raw)
+    train_end = int(0.800 * N_raw)
+    test_end = int(0.940 * N_raw)
     val_end = int(N_raw)
     save_split(X_raw[0:train_end], y_raw[0:train_end], dataset_dir, "train")
     save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
@@ -392,7 +391,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     HIDDEN_SIZE = 16
     NUM_LAYERS = 2
     KERNEL_SIZE = 4
-    DROPOUT = 0.4
+    DROPOUT = 0.5
     # Slightly larger model for better capacity
     model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
@@ -513,8 +512,10 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
 
     print(f"Evaluating on VALIDATION DATASET")
-
-
+    weighted_val,val_acc = evaluate_weighted(cnn_model,val_loader,device)
+    print(f"CNN VAL performance weighted: {weighted_val:3f} pure: {val_acc}")
+    weighted_val, val_acc = evaluate_weighted(model, val_loader, device)
+    print(f"LSTM VAL performance weighted: {weighted_val:3f} pure: {val_acc}")
     symbol = dataset_dir.split("_")[0]
     print(f"STATS FOR {symbol}")
 
@@ -582,8 +583,8 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     N_raw = len(X_raw)
 
     # Define boundaries on the FULL unfiltered data
-    train_start = int(0.125*N_raw)
-    train_end = int((0.70+0.125) * N_raw)
+    train_start = int(0.06*N_raw)
+    train_end = int((0.80+0.06) * N_raw)
     test_end = int(N_raw)
     save_split(X_raw[train_start:train_end], y_raw[train_start:train_end], dataset_dir, "train")
     save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
@@ -620,10 +621,10 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
-    HIDDEN_SIZE = 16
+    HIDDEN_SIZE = 8
     NUM_LAYERS = 2
     KERNEL_SIZE = 4
-    DROPOUT = 0.4
+    DROPOUT = 0.3
     # Slightly larger model for better capacity
     model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT

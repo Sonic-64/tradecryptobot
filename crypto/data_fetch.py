@@ -226,7 +226,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     # 2. VOLATILITY RATIO (short-term vs long-term volatility)
     # Short-term volatility (6 periods = ~1.5 days for 6h candles)
 
-    df_resampled['trend_slope_long'] = rolling_slope(df_resampled['Close'], window=112)
+    df_resampled['trend_slope_long'] = rolling_slope(df_resampled['Close'], window=224)
     # 3. VOLUME-PRICE CORRELATION (smart money detection)
     # 20-period rolling correlation between volume and price
     delta = df_resampled['Close'].diff()
@@ -258,7 +258,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','funding_rate','hour','bb_position','bb_width','time_local_Low','time_local_High','pct_change', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Number of Trades','Volume'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','Number of Trades','hour','funding_rate','time_local_Low','time_local_High','pct_change', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()

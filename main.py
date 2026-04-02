@@ -18,7 +18,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_fetch", action="store_true", help="fetching data")
     parser.add_argument("--train", action="store_true", help="Training mode")
     parser.add_argument("--predict", action="store_true", help="Prediction mode")
-    parser.add_argument("--window_days", type=int, default=10, help="Number of past days in each training window")
+    parser.add_argument("--window_days", type=int, default=7, help="Number of past days in each training window")
     parser.add_argument("--horizon", type=int, default=8, help="Number of resampled steps ahead to predict")
     parser.add_argument("--resample_hours", type=int, default=3, help="Resampling interval in hours")
     parser.add_argument("--months", type=int, default=18, help="Number of past months to fetch (-1 for full history)")
