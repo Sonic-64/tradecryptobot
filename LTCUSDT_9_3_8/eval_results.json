@@ -1,0 +1,1495 @@
+{
+  "symbol": "LTCUSDT_9_3_8",
+  "test": [],
+  "val": [
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        53.88,
+        55.36,
+        45.08,
+        63.91,
+        50.48
+      ],
+      "accuracy_avg": 53.74,
+      "accuracy_avg_weighted": 53.75,
+      "score": -1.552741,
+      "num_trades": [
+        245,
+        168,
+        193,
+        169,
+        105
+      ],
+      "coverage_pct": [
+        85.37,
+        58.54,
+        67.25,
+        58.89,
+        36.59
+      ],
+      "coverage_avg": 61.33
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.53,
+      "accuracy": [
+        52.25,
+        56.46,
+        45.22,
+        62.5,
+        51.9
+      ],
+      "accuracy_avg": 53.67,
+      "accuracy_avg_weighted": 53.41,
+      "score": -1.483978,
+      "num_trades": [
+        222,
+        147,
+        115,
+        96,
+        79
+      ],
+      "coverage_pct": [
+        77.35,
+        51.22,
+        40.07,
+        33.45,
+        27.53
+      ],
+      "coverage_avg": 45.92
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "accuracy": [
+        53.85,
+        57.25,
+        46.0,
+        44.44,
+        63.33
+      ],
+      "accuracy_avg": 52.97,
+      "accuracy_avg_weighted": 54.13,
+      "score": -0.607866,
+      "num_trades": [
+        195,
+        138,
+        50,
+        54,
+        60
+      ],
+      "coverage_pct": [
+        67.94,
+        48.08,
+        17.42,
+        18.82,
+        20.91
+      ],
+      "coverage_avg": 34.63
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.58,
+      "accuracy": [
+        54.04,
+        57.43,
+        60.0,
+        40.0,
+        85.71
+      ],
+      "accuracy_avg": 59.44,
+      "accuracy_avg_weighted": 56.77,
+      "score": 0.84117,
+      "num_trades": [
+        161,
+        101,
+        10,
+        40,
+        35
+      ],
+      "coverage_pct": [
+        56.1,
+        35.19,
+        3.48,
+        13.94,
+        12.2
+      ],
+      "coverage_avg": 24.18
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "accuracy": [
+        54.69,
+        47.95,
+        null,
+        36.67,
+        88.0
+      ],
+      "accuracy_avg": 56.83,
+      "accuracy_avg_weighted": 53.91,
+      "score": -0.393214,
+      "num_trades": [
+        128,
+        73,
+        0,
+        30,
+        25
+      ],
+      "coverage_pct": [
+        44.6,
+        25.44,
+        0.0,
+        10.45,
+        8.71
+      ],
+      "coverage_avg": 17.84
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "accuracy": [
+        48.57,
+        16.67,
+        null,
+        100.0,
+        100.0
+      ],
+      "accuracy_avg": 66.31,
+      "accuracy_avg_weighted": 48.31,
+      "score": -0.890565,
+      "num_trades": [
+        70,
+        12,
+        0,
+        2,
+        5
+      ],
+      "coverage_pct": [
+        24.39,
+        4.18,
+        0.0,
+        0.7,
+        1.74
+      ],
+      "coverage_avg": 6.2
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.53,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        56.34,
+        61.54,
+        68.57,
+        65.03,
+        50.48
+      ],
+      "accuracy_avg": 60.39,
+      "accuracy_avg_weighted": 59.96,
+      "score": 2.979353,
+      "num_trades": [
+        71,
+        78,
+        35,
+        163,
+        105
+      ],
+      "coverage_pct": [
+        24.74,
+        27.18,
+        12.2,
+        56.79,
+        36.59
+      ],
+      "coverage_avg": 31.5
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.53,
+      "cnn_threshold": 0.53,
+      "accuracy": [
+        56.34,
+        62.32,
+        61.54,
+        64.13,
+        51.9
+      ],
+      "accuracy_avg": 59.25,
+      "accuracy_avg_weighted": 59.05,
+      "score": 1.829555,
+      "num_trades": [
+        71,
+        69,
+        26,
+        92,
+        79
+      ],
+      "coverage_pct": [
+        24.74,
+        24.04,
+        9.06,
+        32.06,
+        27.53
+      ],
+      "coverage_avg": 23.49
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.53,
+      "cnn_threshold": 0.55,
+      "accuracy": [
+        59.7,
+        63.08,
+        72.73,
+        45.28,
+        63.33
+      ],
+      "accuracy_avg": 60.82,
+      "accuracy_avg_weighted": 58.98,
+      "score": 1.366376,
+      "num_trades": [
+        67,
+        65,
+        11,
+        53,
+        60
+      ],
+      "coverage_pct": [
+        23.34,
+        22.65,
+        3.83,
+        18.47,
+        20.91
+      ],
+      "coverage_avg": 17.84
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.53,
+      "cnn_threshold": 0.58,
+      "accuracy": [
+        57.81,
+        68.89,
+        100.0,
+        40.0,
+        85.71
+      ],
+      "accuracy_avg": 70.48,
+      "accuracy_avg_weighted": 62.36,
+      "score": 1.779722,
+      "num_trades": [
+        64,
+        45,
+        2,
+        40,
+        35
+      ],
+      "coverage_pct": [
+        22.3,
+        15.68,
+        0.7,
+        13.94,
+        12.2
+      ],
+      "coverage_avg": 12.96
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.53,
+      "cnn_threshold": 0.6,
+      "accuracy": [
+        59.26,
+        65.38,
+        null,
+        36.67,
+        88.0
+      ],
+      "accuracy_avg": 62.33,
+      "accuracy_avg_weighted": 60.74,
+      "score": 1.022632,
+      "num_trades": [
+        54,
+        26,
+        0,
+        30,
+        25
+      ],
+      "coverage_pct": [
+        18.82,
+        9.06,
+        0.0,
+        10.45,
+        8.71
+      ],
+      "coverage_avg": 9.41
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.53,
+      "cnn_threshold": 0.65,
+      "accuracy": [
+        53.33,
+        0.0,
+        null,
+        100.0,
+        100.0
+      ],
+      "accuracy_avg": 63.33,
+      "accuracy_avg_weighted": 53.49,
+      "score": -0.091996,
+      "num_trades": [
+        30,
+        6,
+        0,
+        2,
+        5
+      ],
+      "coverage_pct": [
+        10.45,
+        2.09,
+        0.0,
+        0.7,
+        1.74
+      ],
+      "coverage_avg": 3.0
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        45.45,
+        66.67,
+        50.0,
+        64.56,
+        50.48
+      ],
+      "accuracy_avg": 55.43,
+      "accuracy_avg_weighted": 58.43,
+      "score": 1.289832,
+      "num_trades": [
+        11,
+        3,
+        2,
+        158,
+        105
+      ],
+      "coverage_pct": [
+        3.83,
+        1.05,
+        0.7,
+        55.05,
+        36.59
+      ],
+      "coverage_avg": 19.44
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.53,
+      "accuracy": [
+        45.45,
+        66.67,
+        100.0,
+        64.04,
+        51.9
+      ],
+      "accuracy_avg": 65.61,
+      "accuracy_avg_weighted": 57.92,
+      "score": 0.723669,
+      "num_trades": [
+        11,
+        3,
+        1,
+        89,
+        79
+      ],
+      "coverage_pct": [
+        3.83,
+        1.05,
+        0.35,
+        31.01,
+        27.53
+      ],
+      "coverage_avg": 12.75
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.55,
+      "accuracy": [
+        45.45,
+        66.67,
+        100.0,
+        44.0,
+        63.33
+      ],
+      "accuracy_avg": 63.89,
+      "accuracy_avg_weighted": 54.4,
+      "score": -0.105152,
+      "num_trades": [
+        11,
+        3,
+        1,
+        50,
+        60
+      ],
+      "coverage_pct": [
+        3.83,
+        1.05,
+        0.35,
+        17.42,
+        20.91
+      ],
+      "coverage_avg": 8.71
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.58,
+      "accuracy": [
+        45.45,
+        100.0,
+        null,
+        40.0,
+        85.71
+      ],
+      "accuracy_avg": 67.79,
+      "accuracy_avg_weighted": 60.22,
+      "score": 0.608722,
+      "num_trades": [
+        11,
+        2,
+        0,
+        40,
+        35
+      ],
+      "coverage_pct": [
+        3.83,
+        0.7,
+        0.0,
+        13.94,
+        12.2
+      ],
+      "coverage_avg": 6.13
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.6,
+      "accuracy": [
+        45.45,
+        null,
+        null,
+        36.67,
+        88.0
+      ],
+      "accuracy_avg": 56.71,
+      "accuracy_avg_weighted": 57.58,
+      "score": 0.231439,
+      "num_trades": [
+        11,
+        0,
+        0,
+        30,
+        25
+      ],
+      "coverage_pct": [
+        3.83,
+        0.0,
+        0.0,
+        10.45,
+        8.71
+      ],
+      "coverage_avg": 4.6
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.55,
+      "cnn_threshold": 0.65,
+      "accuracy": [
+        28.57,
+        null,
+        null,
+        100.0,
+        100.0
+      ],
+      "accuracy_avg": 76.19,
+      "accuracy_avg_weighted": 64.28,
+      "score": 0.166844,
+      "num_trades": [
+        7,
+        0,
+        0,
+        2,
+        5
+      ],
+      "coverage_pct": [
+        2.44,
+        0.0,
+        0.0,
+        0.7,
+        1.74
+      ],
+      "coverage_avg": 0.98
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.58,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        null,
+        null,
+        null,
+        64.24,
+        50.48
+      ],
+      "accuracy_avg": 57.36,
+      "accuracy_avg_weighted": 58.6,
+      "score": 1.240345,
+      "num_trades": [
+        0,
+        0,
+        0,
+        151,
+        105
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        52.61,
+        36.59
+      ],
+      "coverage_avg": 17.84
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.58,
+      "cnn_threshold": 0.53,
+      "accuracy": [
+        null,
+        null,
+        null,
+        64.77,
+        51.9
+      ],
+      "accuracy_avg": 58.33,
+      "accuracy_avg_weighted": 58.68,
+      "score": 0.826644,
+      "num_trades": [
+        0,
+        0,
+        0,
+        88,
+        79
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        30.66,
+        27.53
+      ],
+      "coverage_avg": 11.64
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.58,
+      "cnn_threshold": 0.55,
+      "accuracy": [
+        null,
+        null,
+        null,
+        44.0,
+        63.33
+      ],
+      "accuracy_avg": 53.66,
+      "accuracy_avg_weighted": 54.54,
+      "score": -0.070891,
+      "num_trades": [
+        0,
+        0,
+        0,
+        50,
+        60
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        17.42,
+        20.91
+      ],
+      "coverage_avg": 7.67
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.58,
+      "cnn_threshold": 0.58,
+      "accuracy": [
+        null,
+        null,
+        null,
+        40.0,
+        85.71
+      ],
+      "accuracy_avg": 62.85,
+      "accuracy_avg_weighted": 61.33,
+      "score": 0.623438,
+      "num_trades": [
+        0,
+        0,
+        0,
+        40,
+        35
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        13.94,
+        12.2
+      ],
+      "coverage_avg": 5.23
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.58,
+      "cnn_threshold": 0.6,
+      "accuracy": [
+        null,
+        null,
+        null,
+        36.67,
+        88.0
+      ],
+      "accuracy_avg": 62.34,
+      "accuracy_avg_weighted": 60.0,
+      "score": 0.365038,
+      "num_trades": [
+        0,
+        0,
+        0,
+        30,
+        25
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        10.45,
+        8.71
+      ],
+      "coverage_avg": 3.83
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.58,
+      "cnn_threshold": 0.65,
+      "accuracy": [
+        null,
+        null,
+        null,
+        100.0,
+        100.0
+      ],
+      "accuracy_avg": 100.0,
+      "accuracy_avg_weighted": 100.0,
+      "score": 0.314508,
+      "num_trades": [
+        0,
+        0,
+        0,
+        2,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        0.7,
+        1.74
+      ],
+      "coverage_avg": 0.49
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        null,
+        null,
+        null,
+        63.77,
+        53.66
+      ],
+      "accuracy_avg": 58.72,
+      "accuracy_avg_weighted": 60.0,
+      "score": 1.461105,
+      "num_trades": [
+        0,
+        0,
+        0,
+        138,
+        82
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        48.08,
+        28.57
+      ],
+      "coverage_avg": 15.33
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.53,
+      "accuracy": [
+        null,
+        null,
+        null,
+        63.41,
+        52.86
+      ],
+      "accuracy_avg": 58.13,
+      "accuracy_avg_weighted": 58.55,
+      "score": 0.726398,
+      "num_trades": [
+        0,
+        0,
+        0,
+        82,
+        70
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        28.57,
+        24.39
+      ],
+      "coverage_avg": 10.59
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.55,
+      "accuracy": [
+        null,
+        null,
+        null,
+        43.75,
+        67.92
+      ],
+      "accuracy_avg": 55.84,
+      "accuracy_avg_weighted": 56.43,
+      "score": 0.198519,
+      "num_trades": [
+        0,
+        0,
+        0,
+        48,
+        53
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        16.72,
+        18.47
+      ],
+      "coverage_avg": 7.04
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.58,
+      "accuracy": [
+        null,
+        null,
+        null,
+        40.0,
+        85.29
+      ],
+      "accuracy_avg": 62.65,
+      "accuracy_avg_weighted": 60.81,
+      "score": 0.567239,
+      "num_trades": [
+        0,
+        0,
+        0,
+        40,
+        34
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        13.94,
+        11.85
+      ],
+      "coverage_avg": 5.16
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.6,
+      "accuracy": [
+        null,
+        null,
+        null,
+        36.67,
+        87.5
+      ],
+      "accuracy_avg": 62.09,
+      "accuracy_avg_weighted": 59.26,
+      "score": 0.307434,
+      "num_trades": [
+        0,
+        0,
+        0,
+        30,
+        24
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        10.45,
+        8.36
+      ],
+      "coverage_avg": 3.76
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.6,
+      "cnn_threshold": 0.65,
+      "accuracy": [
+        null,
+        null,
+        null,
+        100.0,
+        100.0
+      ],
+      "accuracy_avg": 100.0,
+      "accuracy_avg_weighted": 100.0,
+      "score": 0.314508,
+      "num_trades": [
+        0,
+        0,
+        0,
+        2,
+        5
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        0.7,
+        1.74
+      ],
+      "coverage_avg": 0.49
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        null,
+        null,
+        null,
+        65.25,
+        58.82
+      ],
+      "accuracy_avg": 62.03,
+      "accuracy_avg_weighted": 64.44,
+      "score": 1.627407,
+      "num_trades": [
+        0,
+        0,
+        0,
+        118,
+        17
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        41.11,
+        5.92
+      ],
+      "coverage_avg": 9.41
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.53,
+      "accuracy": [
+        null,
+        null,
+        null,
+        64.1,
+        53.85
+      ],
+      "accuracy_avg": 58.97,
+      "accuracy_avg_weighted": 62.64,
+      "score": 0.901508,
+      "num_trades": [
+        0,
+        0,
+        0,
+        78,
+        13
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        27.18,
+        4.53
+      ],
+      "coverage_avg": 6.34
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.55,
+      "accuracy": [
+        null,
+        null,
+        null,
+        44.68,
+        53.85
+      ],
+      "accuracy_avg": 49.27,
+      "accuracy_avg_weighted": 46.67,
+      "score": -0.76177,
+      "num_trades": [
+        0,
+        0,
+        0,
+        47,
+        13
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        16.38,
+        4.53
+      ],
+      "coverage_avg": 4.18
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.58,
+      "accuracy": [
+        null,
+        null,
+        null,
+        40.0,
+        66.67
+      ],
+      "accuracy_avg": 53.34,
+      "accuracy_avg_weighted": 43.48,
+      "score": -0.840649,
+      "num_trades": [
+        0,
+        0,
+        0,
+        40,
+        6
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        13.94,
+        2.09
+      ],
+      "coverage_avg": 3.21
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.6,
+      "accuracy": [
+        null,
+        null,
+        null,
+        36.67,
+        66.67
+      ],
+      "accuracy_avg": 51.67,
+      "accuracy_avg_weighted": 39.4,
+      "score": -0.860123,
+      "num_trades": [
+        0,
+        0,
+        0,
+        30,
+        3
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        10.45,
+        1.05
+      ],
+      "coverage_avg": 2.3
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": true,
+      "threshold": 0.65,
+      "cnn_threshold": 0.65,
+      "accuracy": [
+        null,
+        null,
+        null,
+        100.0,
+        100.0
+      ],
+      "accuracy_avg": 100.0,
+      "accuracy_avg_weighted": 100.0,
+      "score": 0.134789,
+      "num_trades": [
+        0,
+        0,
+        0,
+        2,
+        1
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        0.7,
+        0.35
+      ],
+      "coverage_avg": 0.21
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        53.31,
+        52.61,
+        50.17,
+        60.63,
+        50.87
+      ],
+      "accuracy_avg": 53.52,
+      "accuracy_avg_weighted": 53.52,
+      "score": -3.004692,
+      "num_trades": [
+        287,
+        287,
+        287,
+        287,
+        287
+      ],
+      "coverage_pct": [
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "coverage_avg": 100.0
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "threshold": 0.53,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        58.11,
+        62.65,
+        68.29,
+        61.96,
+        50.87
+      ],
+      "accuracy_avg": 60.38,
+      "accuracy_avg_weighted": 57.82,
+      "score": 2.909592,
+      "num_trades": [
+        74,
+        83,
+        41,
+        276,
+        287
+      ],
+      "coverage_pct": [
+        25.78,
+        28.92,
+        14.29,
+        96.17,
+        100.0
+      ],
+      "coverage_avg": 53.03
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "threshold": 0.55,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        45.45,
+        66.67,
+        50.0,
+        62.41,
+        52.52
+      ],
+      "accuracy_avg": 55.41,
+      "accuracy_avg_weighted": 57.5,
+      "score": 1.768156,
+      "num_trades": [
+        11,
+        3,
+        2,
+        266,
+        238
+      ],
+      "coverage_pct": [
+        3.83,
+        1.05,
+        0.7,
+        92.68,
+        82.93
+      ],
+      "coverage_avg": 36.24
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "threshold": 0.58,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        null,
+        null,
+        null,
+        62.5,
+        53.81
+      ],
+      "accuracy_avg": 58.16,
+      "accuracy_avg_weighted": 58.72,
+      "score": 2.265538,
+      "num_trades": [
+        0,
+        0,
+        0,
+        256,
+        197
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        89.2,
+        68.64
+      ],
+      "coverage_avg": 31.57
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "threshold": 0.6,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        null,
+        null,
+        null,
+        62.08,
+        57.81
+      ],
+      "accuracy_avg": 59.95,
+      "accuracy_avg_weighted": 60.59,
+      "score": 2.717335,
+      "num_trades": [
+        0,
+        0,
+        0,
+        240,
+        128
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        83.62,
+        44.6
+      ],
+      "coverage_avg": 25.64
+    },
+    {
+      "use_lstm": true,
+      "use_cnn": false,
+      "threshold": 0.65,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        null,
+        null,
+        null,
+        63.41,
+        65.0
+      ],
+      "accuracy_avg": 64.2,
+      "accuracy_avg_weighted": 63.55,
+      "score": 2.475215,
+      "num_trades": [
+        0,
+        0,
+        0,
+        205,
+        20
+      ],
+      "coverage_pct": [
+        0.0,
+        0.0,
+        0.0,
+        71.43,
+        6.97
+      ],
+      "coverage_avg": 15.68
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.5,
+      "accuracy": [
+        53.31,
+        53.66,
+        43.21,
+        55.75,
+        49.48
+      ],
+      "accuracy_avg": 51.08,
+      "accuracy_avg_weighted": 51.08,
+      "score": -8.164399,
+      "num_trades": [
+        287,
+        287,
+        287,
+        287,
+        287
+      ],
+      "coverage_pct": [
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "coverage_avg": 100.0
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.53,
+      "accuracy": [
+        53.15,
+        55.7,
+        40.35,
+        59.23,
+        51.16
+      ],
+      "accuracy_avg": 51.92,
+      "accuracy_avg_weighted": 51.9,
+      "score": -4.451571,
+      "num_trades": [
+        254,
+        228,
+        171,
+        130,
+        215
+      ],
+      "coverage_pct": [
+        88.5,
+        79.44,
+        59.58,
+        45.3,
+        74.91
+      ],
+      "coverage_avg": 69.55
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.55,
+      "accuracy": [
+        55.16,
+        54.45,
+        38.46,
+        46.15,
+        56.8
+      ],
+      "accuracy_avg": 50.2,
+      "accuracy_avg_weighted": 52.75,
+      "score": -2.329363,
+      "num_trades": [
+        223,
+        191,
+        78,
+        65,
+        169
+      ],
+      "coverage_pct": [
+        77.7,
+        66.55,
+        27.18,
+        22.65,
+        58.89
+      ],
+      "coverage_avg": 50.59
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.58,
+      "accuracy": [
+        54.24,
+        53.73,
+        60.0,
+        40.0,
+        62.1
+      ],
+      "accuracy_avg": 54.01,
+      "accuracy_avg_weighted": 55.05,
+      "score": 0.033783,
+      "num_trades": [
+        177,
+        134,
+        10,
+        40,
+        124
+      ],
+      "coverage_pct": [
+        61.67,
+        46.69,
+        3.48,
+        13.94,
+        43.21
+      ],
+      "coverage_avg": 33.8
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.6,
+      "accuracy": [
+        53.24,
+        45.45,
+        null,
+        36.67,
+        61.86
+      ],
+      "accuracy_avg": 49.31,
+      "accuracy_avg_weighted": 52.06,
+      "score": -1.541048,
+      "num_trades": [
+        139,
+        99,
+        0,
+        30,
+        97
+      ],
+      "coverage_pct": [
+        48.43,
+        34.49,
+        0.0,
+        10.45,
+        33.8
+      ],
+      "coverage_avg": 25.43
+    },
+    {
+      "use_lstm": false,
+      "use_cnn": true,
+      "threshold": 0.5,
+      "cnn_threshold": 0.65,
+      "accuracy": [
+        45.45,
+        38.1,
+        null,
+        100.0,
+        66.67
+      ],
+      "accuracy_avg": 62.56,
+      "accuracy_avg_weighted": 47.32,
+      "score": -1.302421,
+      "num_trades": [
+        77,
+        21,
+        0,
+        2,
+        12
+      ],
+      "coverage_pct": [
+        26.83,
+        7.32,
+        0.0,
+        0.7,
+        4.18
+      ],
+      "coverage_avg": 7.81
+    }
+  ],
+  "metamodel": []
+}

@@ -205,7 +205,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     df_resampled['funding_z'] = df_resampled['volume_zscore'].clip(-5,5)
     df_resampled['local_ATH'] = df_resampled['Close'].rolling(window=224, min_periods=1).max()
     df_resampled['local_ATL'] = df_resampled['Close'].rolling(window=224, min_periods=1).min()
-    df_resampled['pct_change'] = df_resampled['Close'].pct_change(periods=3,fill_method=None)
+    df_resampled['pct_change'] = df_resampled['Close'].pct_change(periods=8,fill_method=None)
     df_resampled['pct_change'] = df_resampled['pct_change'].fillna(0.0)
     is_ath = df_resampled['Close'] == df_resampled['local_ATH']
     is_atl = df_resampled['Close'] == df_resampled['local_ATL']
@@ -258,7 +258,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','Number of Trades','hour','funding_rate','time_local_Low','time_local_High','pct_change', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','trend_slope_long','RSI','Number of Trades','hour','funding_rate','time_local_Low','time_local_High','distance_to_high','distance_to_low', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()

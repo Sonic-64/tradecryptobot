@@ -1,0 +1,11 @@
+[
+  "High",
+  "Low",
+  "Close",
+  "volume_zscore",
+  "funding_z",
+  "pct_change",
+  "taker_buy_ratio",
+  "bb_position",
+  "bb_width"
+]

@@ -28,8 +28,8 @@ def _compute_score(accuracy_pct,coverage):
     base = (2 * acc - 0.1)
     if base <= 0:
         return 0
-    coverage_factor = coverage ** 1.2
-    return round(math.log(2*acc - 0.06) * coverage_factor, 6)
+    coverage_factor = coverage ** 1.0
+    return round(math.log(2*acc - 0.1) * coverage_factor, 6)
 def load_eval_results(dataset_dir):
     path = Path(dataset_dir) / "eval_results.json"
     if not path.exists():

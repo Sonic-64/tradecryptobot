@@ -1,6 +1,5 @@
 import time
-
-
+import hmmlearn
 import torch
 import torch.nn as nn
 from sklearn.preprocessing import StandardScaler
@@ -10,7 +9,6 @@ from torch.nn import BCEWithLogitsLoss
 
 from torch.utils.data import Dataset, DataLoader
 from itertools import product
-from sklearn.linear_model import LogisticRegression
 import numpy as np
 import json
 import random
@@ -88,7 +86,6 @@ def train(model, loader, criterion, optimizer,
             loss = criterion(logits, y_class)
 
         loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), clip)
         optimizer.step()
         total_loss += loss.item() * xb.size(0)
 
@@ -177,6 +174,8 @@ def evaluate_weighted(model, loader, device,
 
 def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50,label=""):
     accuracy_confidence = 0.5
+    weighted_correct = 0.0
+    weighted_total = 0.0
     all_predictions = []
     with torch.no_grad():
         for xb, y_class, y_change in loader:
@@ -224,7 +223,11 @@ def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0
             trades.append(p)
             predicted_direction = 1 if predict_long else 0
             actual_direction = 1 if p['actual_class'] > 0 else 0
+            is_correct = predicted_direction == actual_direction
             correct_trades.append(predicted_direction == actual_direction)
+            w = float(np.clip(abs(p["actual_change"]) * 60.0, 0.20, 3.0))
+            weighted_correct += w * int(is_correct)
+            weighted_total += w
 
     result = {
         "label": label,
@@ -236,14 +239,12 @@ def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0
         "total_samples": len(all_predictions),
         "coverage_pct": round(len(correct_trades) / len(all_predictions) * 100, 2) if all_predictions else 0,
         "accuracy": None,
-        "accuracy_pure":None,
     }
     if trades:
 
         accuracy_confidence = sum(correct_trades)/len(correct_trades)
-        result["accuracy_pure"] = round(accuracy_confidence * 100, 2)
-        accuracy_weighted = 0
-        result["accuracy"] = round(accuracy_weighted * 100,2)
+        result["accuracy"] = round(accuracy_confidence * 100, 2)
+
 
     return accuracy_confidence,result
 def conf_eval_live(model,cnn_model,xb,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50):
@@ -298,7 +299,7 @@ def save_split(X, y, directory, name):
 
 
 
-def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
+def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
     random.seed(SEED)
     np.random.seed(SEED)
     torch.manual_seed(SEED)
@@ -388,10 +389,11 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
-    HIDDEN_SIZE = 16
+    HIDDEN_SIZE = 8
     NUM_LAYERS = 2
     KERNEL_SIZE = 4
-    DROPOUT = 0.5
+    DROPOUT = 0.2
+    print(f"using HIDDEN SIZE:{HIDDEN_SIZE} NUM LAYERS:{NUM_LAYERS} KERNEL_SIZE:{KERNEL_SIZE} DROPOUT:{DROPOUT}")
     # Slightly larger model for better capacity
     model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
@@ -424,7 +426,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
             train_loader,
             class_criterion,
             optimizer,
-            device,weighted=True
+            device,weighted=False
         )
         test_acc,plain_acc  = evaluate_weighted(
             model, test_loader, device
@@ -434,8 +436,8 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         scheduler.step()
 
         # Early stopping based on accuracy
-        if test_acc > best_acc:
-            best_acc = test_acc
+        if plain_acc > best_acc:
+            best_acc = plain_acc
             patience_counter = 0
             # Save best model
             torch.save(model.state_dict(), f"{dataset_dir}/{SEED}_binary_model.pt")
@@ -474,12 +476,12 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     patience_counter = 0
     best_acc = 0
     for epoch in range(1, EPOCHS + 1):
-        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device)
+        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device,weighted=False)
         test_acc,plain_acc = evaluate_weighted(cnn_model, test_loader, device)
         cnn_scheduler.step()
 
-        if test_acc > best_acc:
-            best_acc = test_acc
+        if plain_acc > best_acc:
+            best_acc = plain_acc
             patience_counter = 0
             torch.save(cnn_model.state_dict(), f"{dataset_dir}/{SEED}_cnn_model.pt")
         else:
@@ -501,7 +503,6 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     cnn_model.eval()
     model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_binary_model.pt"))
     model.eval()
-    criterion = BCEWithLogitsLoss()
     weighted_train, train_acc = evaluate_weighted(model, train_loader, device)
     weighted_test, test_acc = evaluate_weighted(model, test_loader, device)
     print(f" LSTM train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}  weighted LSTM train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
@@ -509,7 +510,16 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     weighted_test, test_acc = evaluate_weighted(cnn_model, test_loader,device)
     print(f" CNN train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}  weighted CNN train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
     evalpath = Path(dataset_dir) / "eval_results.json"
+    if evalpath.exists() and evalpath.stat().st_size > 0:
+        eval_results = load_eval_results(dataset_dir)
+    else:
+        eval_results = {
+            "symbol": dataset_dir,
+            "test": [],
+            "val": [],
+            "metamodel": []
 
+        }
 
     print(f"Evaluating on VALIDATION DATASET")
     weighted_val,val_acc = evaluate_weighted(cnn_model,val_loader,device)
@@ -517,6 +527,27 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     weighted_val, val_acc = evaluate_weighted(model, val_loader, device)
     print(f"LSTM VAL performance weighted: {weighted_val:3f} pure: {val_acc}")
     symbol = dataset_dir.split("_")[0]
+    flags = [True, False]
+    thresholds = [0.50, 0.53, 0.55, 0.58, 0.60, 0.65]
+
+    for use_lstm, use_cnn in product(flags, flags):
+        if not any([use_lstm, use_cnn]):
+            continue
+
+        for threshold, cnn_threshold in product(
+                thresholds if use_lstm else [0.50],
+                thresholds if use_cnn else [0.50],
+
+        ):
+            accuracy_confidence, r = conf_eval(
+                model, cnn_model, val_loader,
+
+                use_lstm=use_lstm, use_cnn=use_cnn,
+                prop_threshold=threshold, cnn_threshold=cnn_threshold
+            )
+            insert_eval_results(eval_results["val"], r)
+    save_eval_results(eval_results, dataset_dir)
+    get_best_config(dataset_dir)
     print(f"STATS FOR {symbol}")
 
     _,median_change,_,median_dip = analyze_days(symbol=symbol,lookback_days=360)
@@ -547,7 +578,7 @@ def check_if_good_for_prediction(resample_hours=6, max_minutes_after=15):
         return False
 
     return True
-def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
+def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
     random.seed(SEED)
     np.random.seed(SEED)
     torch.manual_seed(SEED)
@@ -624,7 +655,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     HIDDEN_SIZE = 8
     NUM_LAYERS = 2
     KERNEL_SIZE = 4
-    DROPOUT = 0.3
+    DROPOUT = 0.2
     # Slightly larger model for better capacity
     model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
@@ -656,7 +687,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
             train_loader,
             class_criterion,
             optimizer,
-            device,weighted=True
+            device,weighted=False
         )
         test_acc,plain_acc = evaluate_weighted(
             model, test_loader,  device
@@ -666,8 +697,8 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         scheduler.step()
 
         # Early stopping based on accuracy
-        if test_acc > best_acc:
-            best_acc = test_acc
+        if plain_acc > best_acc:
+            best_acc = plain_acc
             patience_counter = 0
             # Save best model
             torch.save(model.state_dict(), f"{dataset_dir}/{SEED}_binary_model.pt")
@@ -701,12 +732,12 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     patience_counter = 0
     best_acc = 0
     for epoch in range(1, EPOCHS + 1):
-        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device,weighted=True)
+        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device,weighted=False)
         test_acc,plain_acc = evaluate_weighted(cnn_model, test_loader,  device)
         cnn_scheduler.step()
 
-        if test_acc > best_acc:
-            best_acc = test_acc
+        if plain_acc > best_acc:
+            best_acc = plain_acc
             patience_counter = 0
             torch.save(cnn_model.state_dict(), f"{dataset_dir}/{SEED}_cnn_model.pt")
         else:
@@ -922,7 +953,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
                     window_end = min(i + 4, min_len - 1)
                     next_candles = feature_array[i:window_end, :]
 
-                    dip_pct = c["DIP_PCT"] * 1.0
+                    dip_pct = c["DIP_PCT"] * 0.7
 
                     if direction == "LONG":
                         entry_price = candle_open * (1 - dip_pct)
@@ -954,9 +985,6 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
         sizes = trade_log["trade_size"]
         if pnls:
             wins = sum(1 for p in pnls if p > 0)
-            total_invested = sum(sizes)
-            total_profit = sum(s * (p / 100) for s, p in zip(sizes, pnls))
-            total_returned = total_invested + total_profit
             trade_log["num_trades"] = len(pnls)
             trade_log["win_rate"] = round(wins / len(pnls) * 100, 2)
             trade_log["avg_pnl"] = round(sum(pnls) / len(pnls), 4)
@@ -965,7 +993,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
             trade_log["final_balance"] = round(balance, 2)
             print(f"\n  {symbol} Summary:")
             print(f"  Trades: {len(pnls)} | Win rate: {trade_log['win_rate']}% | Avg PnL: {trade_log['avg_pnl']}%")
-            print(f"  ROI: {trade_log['roi']}% | Final balance: ${balance:.2f}")
+            print(f"  ROI: {trade_log['roi']*100}% | Final balance: ${balance:.2f}")
             print("\n─── DIP FILL STATISTICS ───")
 
             attempts = fill_stats[symbol]["attempts"]
@@ -979,7 +1007,8 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
         json.dump(all_trade_logs, f, indent=2)
     print("\nSaved to paper_trade_historical.json")
     max_drawdown = min(1000,balance)/1000
-    return (1-max_drawdown),trade_log["roi"]
+    roi = round((balance - 1000.0) / 1000.0, 2)
+    return (1-max_drawdown),roi
 
 
 def test_live(training_time,config,resample_hours,window_days,horizon):
