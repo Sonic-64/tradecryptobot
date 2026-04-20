@@ -1,69 +1,33 @@
+import math
 import time
-import hmmlearn
+
 import torch
 import torch.nn as nn
 from sklearn.preprocessing import StandardScaler
-
 import joblib
 from torch.nn import BCEWithLogitsLoss
-
-from torch.utils.data import Dataset, DataLoader
-from itertools import product
+from torch.utils.data import  DataLoader
+from itertools import product, combinations
 import numpy as np
 import json
 import random
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-
+from .dataset import NumpyDataset
 from . import analyze_days
+from .trend_predict import get_hmm_signal_from_batch,evaluate_hmm,evaluate_full,train_hmm,test_hmm,plot_hmm_states
 from .tune import  save_eval_results, insert_eval_results, load_eval_results,get_best_config
-from .model import LSTMModel,CNNModel,WeightedBCELoss
+from .model import LSTMModel, CNNModel, WeightedBCELoss, HMMRegime,WeightedBrierLoss
 from .data_fetch import (
     make_dataset,
     get_evaluate_window,
     scale_live_window, get_price_at,download_data, compute_features
 )
-
-class NumpyDataset(Dataset):
-    def __init__(self, X_path, y_path, features_path,filter_noise=True,min_move = 0.004):
-        self.X = torch.FloatTensor(np.load(X_path))
-        self.y_prices = torch.FloatTensor(np.load(y_path))
-
-        with open(features_path, 'r') as f:
-            self.feature_names = json.load(f)
-
-        try:
-            self.close_idx = self.feature_names.index('Close')
-        except ValueError:
-            print("Warning: 'Close' not found in features, using index 3 as fallback")
-            self.close_idx = 3
-
-        # Generate binary labels (1 if future price > current price)
-        # X shape: (N, T, F)
-        # current_price is the Close price at the last time step of the window
-
-        current_prices = self.X[:, -1, self.close_idx]
-
-        price_diff = (self.y_prices - current_prices) / (current_prices + 1e-8)
-        if filter_noise:
-            valid_mask = price_diff.abs() > min_move
-
-            self.X = self.X[valid_mask]
-            self.y_prices = self.y_prices[valid_mask]
-            price_diff = price_diff[valid_mask]
-        self.y_class = (price_diff > 0).float()
-        # Calculate price change ratio for regression target
-        # Avoid division by zero
-        safe_current_prices = torch.where(current_prices == 0, torch.ones_like(current_prices), current_prices)
-        self.y_change =  price_diff
+from .diagnose import calibration_check
 
 
 
-    def __len__(self):
-        return len(self.X)
 
-    def __getitem__(self, idx):
-        return self.X[idx], self.y_class[idx].unsqueeze(0), self.y_change[idx].unsqueeze(0)
 def train(model, loader, criterion, optimizer,
           device, clip: float = 1.0,
           weighted: bool = False):
@@ -80,12 +44,13 @@ def train(model, loader, criterion, optimizer,
         logits = model(xb)
 
         if weighted:
-            criterion = WeightedBCELoss(scale=60.0, min_w=0.20, max_w=3.0)
+            criterion = WeightedBrierLoss()
             loss = criterion(logits, y_class,y_change)
         else:
             loss = criterion(logits, y_class)
 
         loss.backward()
+        nn.utils.clip_grad_norm_(model.parameters(), clip)
         optimizer.step()
         total_loss += loss.item() * xb.size(0)
 
@@ -146,10 +111,10 @@ def evaluate_weighted(model, loader, device,
             probs = torch.sigmoid(logits)
             preds = (probs > 0.5).float()
             correct = (preds == y_class).float()  # (B, 1)
-
+            brier = (probs-preds)**2
             # weights — same formula as WeightedBCELoss
             weights = (y_change.abs() * scale).clamp(min_w, max_w)
-
+            brier_weighted = (brier * weights).mean()
             # weighted accuracy
             weighted_correct += (correct * weights).sum().item()
             weighted_total += weights.sum().item()
@@ -158,9 +123,8 @@ def evaluate_weighted(model, loader, device,
             plain_total += len(y_class)
 
     weighted_acc = weighted_correct / (weighted_total + 1e-8)
-    plain_acc = plain_correct / (plain_total + 1e-8)
 
-    return weighted_acc, plain_acc
+    return weighted_acc, brier_weighted
 
 
 
@@ -172,11 +136,16 @@ def evaluate_weighted(model, loader, device,
 
 
 
-def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50,label=""):
+def conf_eval(config,loader,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50,market_bias=0.0,label=""):
     accuracy_confidence = 0.5
     weighted_correct = 0.0
     weighted_total = 0.0
     all_predictions = []
+    model = config["lstm"]
+    cnn_model = config["cnn"]
+    scaler = config["scaler"]
+    hmm = config["hmm"]
+    features = config["features"]
     with torch.no_grad():
         for xb, y_class, y_change in loader:
             xb = xb.to("cpu")
@@ -188,7 +157,7 @@ def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0
             logits_cnn = cnn_model(xb)
             prop_cnn = torch.sigmoid(logits_cnn)
 
-
+            regime = get_hmm_signal_from_batch(xb,scaler,hmm,features,market_bias)
             # Przenieś na CPU
             prob_up = prob_up.cpu().numpy().flatten()
             prop_cnn = prop_cnn.cpu().numpy().flatten()
@@ -199,19 +168,19 @@ def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0
                     'prob_up_cnn': prop_cnn[i],
                     'actual_class': y_class[i],
                     'actual_change':y_change[i],
+                    'regime_bias':regime[i],
                 })
 
 
     trades = []
     correct_trades = []
 
-    changes = []
 
     for p in all_predictions:
-        cnn_long = p['prob_up_cnn'] > cnn_threshold if use_cnn else True
-        cnn_short = p['prob_up_cnn'] < (1-cnn_threshold) if use_cnn else True
-        lstm_long = p['prob_up'] > prop_threshold if use_lstm else True
-        lstm_short = p['prob_up'] < (1-prop_threshold) if use_lstm else True
+        cnn_long = p['prob_up_cnn']* (1+p['regime_bias'])  > cnn_threshold if use_cnn else True
+        cnn_short = p['prob_up_cnn']* (1+p['regime_bias'])  < (1-cnn_threshold) if use_cnn else True
+        lstm_long = p['prob_up']* (1+p['regime_bias'])  > prop_threshold if use_lstm else True
+        lstm_short = p['prob_up']* (1+p['regime_bias'])  < (1-prop_threshold) if use_lstm else True
         predict_long = (lstm_long and cnn_long)
 
                 # Short: oba modele przewidują spadek
@@ -233,6 +202,7 @@ def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0
         "label": label,
         "use_lstm": use_lstm,
         "use_cnn": use_cnn,
+        "market_bias": market_bias,
         "threshold":prop_threshold,
         "cnn_threshold":cnn_threshold,
         "num_trades": len(correct_trades),
@@ -242,14 +212,21 @@ def conf_eval(model,cnn_model,loader,use_cnn=True,use_lstm=True,prop_threshold=0
     }
     if trades:
 
-        accuracy_confidence = sum(correct_trades)/len(correct_trades)
+        accuracy_confidence = weighted_correct/weighted_total
         result["accuracy"] = round(accuracy_confidence * 100, 2)
 
 
     return accuracy_confidence,result
-def conf_eval_live(model,cnn_model,xb,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50):
+def conf_eval_live(config,xb,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50,market_bias=0.0):
     result = []
+    model = config["lstm"]
+    cnn_model = config["cnn"]
+    scaler = config["scaler"]
+    hmm = config["hmm"]
+    features = config["features"]
     predicted_direction = -1
+    max_signal_strenght = 1
+    signal_strenght = 0
     with torch.no_grad():
 
         xb = xb.to("cpu")
@@ -260,7 +237,7 @@ def conf_eval_live(model,cnn_model,xb,use_cnn=True,use_lstm=True,prop_threshold=
 
         logits_cnn = cnn_model(xb)
         prop_cnn = torch.sigmoid(logits_cnn)
-
+        regime = get_hmm_signal_from_batch(xb, scaler, hmm, features, market_bias)
             # Przenieś na CPU
         prob_up = prob_up.cpu().numpy().flatten()
         prop_cnn = prop_cnn.cpu().numpy().flatten()
@@ -270,41 +247,46 @@ def conf_eval_live(model,cnn_model,xb,use_cnn=True,use_lstm=True,prop_threshold=
             result.append({
                 'prob_up': prob_up[i],
                 'prob_up_cnn': prop_cnn[i],
-                'last_candle':last_candle[i]
+                'last_candle':last_candle[i],
+                'regime_bias': regime[i],
             })
 
 
     for p in result:
-        cnn_long = p['prob_up_cnn'] > cnn_threshold if use_cnn else True
-        cnn_short = p['prob_up_cnn'] < (1-cnn_threshold) if use_cnn else True
-        lstm_long = p['prob_up'] > prop_threshold if use_lstm else True
-        lstm_short = p['prob_up'] < (1-prop_threshold) if use_lstm else True
+
+        cnn_long = p['prob_up_cnn'] * (1+p['regime_bias']) > cnn_threshold if use_cnn else True
+        cnn_short = p['prob_up_cnn'] * (1+p['regime_bias'])  < (1-cnn_threshold) if use_cnn else True
+        lstm_long = p['prob_up'] * (1+p['regime_bias'])  > prop_threshold if use_lstm else True
+        lstm_short = p['prob_up'] * (1+p['regime_bias'])  < (1-prop_threshold) if use_lstm else True
         predict_long = (lstm_long and cnn_long )
 
         predict_short = (lstm_short and cnn_short)
 
         if predict_long or predict_short:
+
             predicted_direction = 1 if predict_long else 0
+            if predicted_direction = 0:
+                signal_strenght = 0
+            else:
+                signal_strenght = 0
 
 
 
 
-
-    return predicted_direction
+    return predicted_direction,math.exp(signal_strenght)
 def save_split(X, y, directory, name):
     np.save(f"{directory}/{name}_X.npy", X)
     np.save(f"{directory}/{name}_y.npy", y)
     # Podział na train/test
 
-
-
-
-def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
+def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     random.seed(SEED)
     np.random.seed(SEED)
     torch.manual_seed(SEED)
     torch.backends.cudnn.deterministic = True
     print(f"TRAININ ON {dataset_dir}")
+    train_hmm(dataset_dir)
+    hmm = joblib.load(f"{dataset_dir}/hmm.pkl")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
         torch.cuda.manual_seed_all(SEED)
@@ -336,8 +318,8 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
     N_raw = len(X_raw)
 
     # Define boundaries on the FULL unfiltered data
-    train_end = int(0.800 * N_raw)
-    test_end = int(0.940 * N_raw)
+    train_end = int(0.750 * N_raw)
+    test_end = int(0.900 * N_raw)
     val_end = int(N_raw)
     save_split(X_raw[0:train_end], y_raw[0:train_end], dataset_dir, "train")
     save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
@@ -389,17 +371,18 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
-    HIDDEN_SIZE = 8
+    HIDDEN_SIZE = 12
     NUM_LAYERS = 2
     KERNEL_SIZE = 4
-    DROPOUT = 0.2
+    DROPOUT = 0.5
+    DROPOUT_LSTM = 0.5
     print(f"using HIDDEN SIZE:{HIDDEN_SIZE} NUM LAYERS:{NUM_LAYERS} KERNEL_SIZE:{KERNEL_SIZE} DROPOUT:{DROPOUT}")
     # Slightly larger model for better capacity
     model = LSTMModel(
-        input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
+        input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT_LSTM
     ).to(device)
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=LR, weight_decay=1e-3
+        model.parameters(), lr=LR, weight_decay=1e-2
     )  # Add weight decay
 
     # Learning rate scheduler
@@ -409,14 +392,15 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
         "input_size": input_size,
         "hidden_size": HIDDEN_SIZE,  # Increased
         "num_layers": NUM_LAYERS,  # Increased
-        "dropout": DROPOUT,  # Increased
+        "dropout": DROPOUT_LSTM,  # Increased
     }
     with open(f"{dataset_dir}/model_config.json", "w") as f:
         json.dump(model_config, f)
 
     # Early stopping variables
     best_acc = 0.0
-    patience = 50
+    best_brier = 1
+    patience = 40
     patience_counter = 0
     print("Starting training with  class accuracy focus...\n")
     for epoch in range(1, EPOCHS + 1):
@@ -426,9 +410,9 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
             train_loader,
             class_criterion,
             optimizer,
-            device,weighted=False
+            device,weighted=True
         )
-        test_acc,plain_acc  = evaluate_weighted(
+        test_acc,brier  = evaluate_weighted(
             model, test_loader, device
         )
 
@@ -436,8 +420,9 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
         scheduler.step()
 
         # Early stopping based on accuracy
-        if plain_acc > best_acc:
-            best_acc = plain_acc
+        if brier < best_brier:
+            best_brier = brier
+            best_acc = test_acc
             patience_counter = 0
             # Save best model
             torch.save(model.state_dict(), f"{dataset_dir}/{SEED}_binary_model.pt")
@@ -452,7 +437,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
 
     # Load best model for final save
 
-    print(f"Model saved as {dataset_dir}/{SEED}_binary_model.pt with accuracy: {best_acc:.2%}\n")
+    print(f"Model saved as {dataset_dir}/{SEED}_binary_model.pt with brier: {best_brier}\n")
 
 
     cnn_model = CNNModel(
@@ -469,19 +454,21 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
     }
     with open(f"{dataset_dir}/cnn_model_config.json", "w") as f:
         json.dump(cnn_model_config, f)
-    cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=LR, weight_decay=1e-3)
+    cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=LR, weight_decay=1e-2)
     cnn_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(cnn_optimizer, T_max=EPOCHS)
     cnn_criterion = BCEWithLogitsLoss()
-    patience = 50
+    patience = 40
     patience_counter = 0
     best_acc = 0
+    best_brier = 1
     for epoch in range(1, EPOCHS + 1):
-        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device,weighted=False)
-        test_acc,plain_acc = evaluate_weighted(cnn_model, test_loader, device)
+        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device,weighted=True)
+        test_acc,brier = evaluate_weighted(cnn_model, test_loader, device)
         cnn_scheduler.step()
 
-        if plain_acc > best_acc:
-            best_acc = plain_acc
+        if brier < best_brier:
+            best_brier = brier
+            best_acc = test_acc
             patience_counter = 0
             torch.save(cnn_model.state_dict(), f"{dataset_dir}/{SEED}_cnn_model.pt")
         else:
@@ -489,7 +476,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
         if patience_counter >= patience:
             break
 
-    print(f"Model saved as {dataset_dir}/{SEED}_cnn_model.pt with accuracy: {best_acc:.2%}\n")
+    print(f"Model saved as {dataset_dir}/{SEED}_cnn_model.pt with brier: {best_brier}\n")
 
 
 
@@ -503,12 +490,12 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
     cnn_model.eval()
     model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_binary_model.pt"))
     model.eval()
-    weighted_train, train_acc = evaluate_weighted(model, train_loader, device)
-    weighted_test, test_acc = evaluate_weighted(model, test_loader, device)
-    print(f" LSTM train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}  weighted LSTM train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
-    weighted_train, train_acc = evaluate_weighted(cnn_model, train_loader, device)
-    weighted_test, test_acc = evaluate_weighted(cnn_model, test_loader,device)
-    print(f" CNN train: {train_acc:.3f}  test: {test_acc:.3f}  gap: {train_acc - test_acc:.3f}  weighted CNN train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
+    weighted_train, train_brier = evaluate_weighted(model, train_loader, device)
+    weighted_test, test_brier = evaluate_weighted(model, test_loader, device)
+    print(f" LSTM train: {train_brier:.3f}  test: {test_brier:.3f}  brier gap : {train_brier - test_brier:.3f}  weighted LSTM train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
+    weighted_train, train_brier = evaluate_weighted(cnn_model, train_loader, device)
+    weighted_test, test_brier = evaluate_weighted(cnn_model, test_loader,device)
+    print(f" CNN train: {train_brier:.3f}  test: {test_brier:.3f}  brier gap: {train_brier - test_brier:.3f}  weighted CNN train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
     evalpath = Path(dataset_dir) / "eval_results.json"
     if evalpath.exists() and evalpath.stat().st_size > 0:
         eval_results = load_eval_results(dataset_dir)
@@ -522,33 +509,42 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
         }
 
     print(f"Evaluating on VALIDATION DATASET")
-    weighted_val,val_acc = evaluate_weighted(cnn_model,val_loader,device)
-    print(f"CNN VAL performance weighted: {weighted_val:3f} pure: {val_acc}")
-    weighted_val, val_acc = evaluate_weighted(model, val_loader, device)
-    print(f"LSTM VAL performance weighted: {weighted_val:3f} pure: {val_acc}")
+    weighted_val,val_brier = evaluate_weighted(cnn_model,val_loader,device)
+    print(f"CNN VAL performance weighted: {weighted_val:3f} brier: {val_brier}")
+    weighted_val, val_brier = evaluate_weighted(model, val_loader, device)
+    print(f"LSTM VAL performance weighted: {weighted_val:3f} brier: {val_brier}")
     symbol = dataset_dir.split("_")[0]
     flags = [True, False]
-    thresholds = [0.50, 0.53, 0.55, 0.58, 0.60, 0.65]
-
+    thresholds = [0.50,  0.55,  0.60, 0.65]
+    market_biases = [0.00,0.10,0.20,0.05]
+    config = {}
+    config["lstm"] = model
+    config["cnn"] = cnn_model
+    config["scaler"] = scaler
+    config["hmm"] = hmm
+    config["features"] = feature_names
     for use_lstm, use_cnn in product(flags, flags):
         if not any([use_lstm, use_cnn]):
             continue
 
-        for threshold, cnn_threshold in product(
+        for threshold, cnn_threshold, market_bias in product(
                 thresholds if use_lstm else [0.50],
                 thresholds if use_cnn else [0.50],
+                market_biases
 
         ):
+
             accuracy_confidence, r = conf_eval(
-                model, cnn_model, val_loader,
+                config, val_loader,
 
                 use_lstm=use_lstm, use_cnn=use_cnn,
-                prop_threshold=threshold, cnn_threshold=cnn_threshold
+                prop_threshold=threshold, cnn_threshold=cnn_threshold,market_bias=market_bias
             )
             insert_eval_results(eval_results["val"], r)
     save_eval_results(eval_results, dataset_dir)
     get_best_config(dataset_dir)
     print(f"STATS FOR {symbol}")
+
 
     _,median_change,_,median_dip = analyze_days(symbol=symbol,lookback_days=360)
     print(f"median dip: {median_dip:.2%}")
@@ -578,12 +574,13 @@ def check_if_good_for_prediction(resample_hours=6, max_minutes_after=15):
         return False
 
     return True
-def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
+def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     random.seed(SEED)
     np.random.seed(SEED)
     torch.manual_seed(SEED)
     torch.backends.cudnn.deterministic = True
     print(f"TRAININ ON {dataset_dir}")
+    train_hmm(dataset_dir,live=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
         torch.cuda.manual_seed_all(SEED)
@@ -602,11 +599,6 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
     if len(dataset) == 0:
         print("No valid training data\n")
         exit(1)
-    pos_ratio = (dataset.y_class.sum() / len(dataset)).item()
-
-    # Calculate class weights for better balancing
-
-    # Split into train/test
 
     N = len(dataset)
     X_raw = np.load(x_path)
@@ -614,8 +606,8 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
     N_raw = len(X_raw)
 
     # Define boundaries on the FULL unfiltered data
-    train_start = int(0.06*N_raw)
-    train_end = int((0.80+0.06) * N_raw)
+    train_start = int(0.1*N_raw)
+    train_end = int((0.75+0.1) * N_raw)
     test_end = int(N_raw)
     save_split(X_raw[train_start:train_end], y_raw[train_start:train_end], dataset_dir, "train")
     save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
@@ -633,8 +625,8 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
     Xte_2d = X_test.view(-1, F).numpy()
     # Fit scaler on TRAIN only and transform both train and test
     scaler = StandardScaler()
-    Xtr_2d = scaler.fit_transform(Xtr_2d)  # ✅ Fit on train only
-    Xte_2d = scaler.transform(Xte_2d)  # ✅ Transform test
+    Xtr_2d = scaler.fit_transform(Xtr_2d)
+    Xte_2d = scaler.transform(Xte_2d)
     scaler_path = Path(dataset_dir) / "scaler.pkl"
     # Save scaler for later use
     joblib.dump(scaler, scaler_path)
@@ -651,17 +643,18 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
     test_loader = DataLoader(test_ds, batch_size=BATCH)
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
-    input_size = sample_x.shape[1]  # Number of features
-    HIDDEN_SIZE = 8
+    input_size = sample_x.shape[1]
+    HIDDEN_SIZE = 12# Number of features
     NUM_LAYERS = 2
     KERNEL_SIZE = 4
-    DROPOUT = 0.2
+    DROPOUT = 0.5
+    DROPOUT_LSTM = 0.5
     # Slightly larger model for better capacity
     model = LSTMModel(
-        input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT
+        input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT_LSTM
     ).to(device)
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=LR, weight_decay=1e-3
+        model.parameters(), lr=LR, weight_decay=1e-2
     )  # Add weight decay
 
     # Learning rate scheduler
@@ -671,14 +664,15 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
         "input_size": input_size,
         "hidden_size": HIDDEN_SIZE,  # Increased
         "num_layers": NUM_LAYERS,  # Increased
-        "dropout": DROPOUT,  # Increased
+        "dropout": DROPOUT_LSTM,  # Increased
     }
     with open(f"{dataset_dir}/model_config.json", "w") as f:
         json.dump(model_config, f)
 
     # Early stopping variables
     best_acc = 0.0
-    patience = 20
+    best_brier = 1
+    patience = 40
     patience_counter = 0
     for epoch in range(1, EPOCHS + 1):
         # Emphasize classification more heavily (alpha=2.0 vs beta=0.5)
@@ -687,9 +681,9 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
             train_loader,
             class_criterion,
             optimizer,
-            device,weighted=False
+            device,weighted=True
         )
-        test_acc,plain_acc = evaluate_weighted(
+        test_acc,brier = evaluate_weighted(
             model, test_loader,  device
         )
 
@@ -697,8 +691,8 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
         scheduler.step()
 
         # Early stopping based on accuracy
-        if plain_acc > best_acc:
-            best_acc = plain_acc
+        if brier < best_brier:
+            best_brier = brier
             patience_counter = 0
             # Save best model
             torch.save(model.state_dict(), f"{dataset_dir}/{SEED}_binary_model.pt")
@@ -725,19 +719,21 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=64, LR=1e-3):
     }
     with open(f"{dataset_dir}/cnn_model_config.json", "w") as f:
         json.dump(cnn_model_config, f)
-    cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=LR, weight_decay=1e-3)
+    cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=LR, weight_decay=1e-2)
     cnn_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(cnn_optimizer, T_max=EPOCHS)
     cnn_criterion = BCEWithLogitsLoss()
-    patience = 50
+    patience = 40
     patience_counter = 0
     best_acc = 0
+    best_brier = 1
     for epoch in range(1, EPOCHS + 1):
-        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device,weighted=False)
-        test_acc,plain_acc = evaluate_weighted(cnn_model, test_loader,  device)
+        train(cnn_model, train_loader, cnn_criterion, cnn_optimizer, device,weighted=True)
+        test_acc,brier = evaluate_weighted(cnn_model, test_loader,  device)
         cnn_scheduler.step()
 
-        if plain_acc > best_acc:
-            best_acc = plain_acc
+        if brier < best_brier:
+            best_acc = test_acc
+            best_brier = brier
             patience_counter = 0
             torch.save(cnn_model.state_dict(), f"{dataset_dir}/{SEED}_cnn_model.pt")
         else:
@@ -800,7 +796,7 @@ def eval_live(months,window_days,resample_hours,horizon):
 
 
 def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=0, paper_trade_days=30, seed=42,
-                           MAX_TRADES_PER_SYMBOL=4):
+                           MAX_TRADES_PER_SYMBOL=2):
     """
     Train on data ending `paper_trade_days` ago, then simulate trading on the last `paper_trade_days`.
 
@@ -854,12 +850,18 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
                        kernel_size=cnn_cfg["kernel_size"], dropout=cnn_cfg["dropout"]).to(device)
         cnn.load_state_dict(torch.load(f"{dataset_dir}/{seed}_cnn_model.pt", map_location=device))
         cnn.eval()
+        dataset_dir = Path(dataset_dir)
 
-
+        features_path = dataset_dir / "features.json"
+        with open(features_path, 'r') as f:
+            features = json.load(f)
 
         symbol_models[symbol] = {
             "lstm": lstm, "cnn": cnn,
             "scaler": joblib.load(f"{dataset_dir}/scaler.pkl"),
+            "hmm":joblib.load(f"{dataset_dir}/hmm.pkl"),
+            "features":features
+
         }
 
     # ── 3. Download last (paper_trade_days + window_days) of data for simulation ──
@@ -911,8 +913,8 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
                         pnl = (exit_price - trade["entry"]) / trade["entry"] * 100
                     else:
                         pnl = (trade["entry"] - exit_price) / trade["entry"] * 100
-                    pnl -= 0.06
-                    pnl *= 10
+                    pnl -= 0.07
+                    pnl *= 20
                     pnl = max(pnl, -100)
                     balance += trade["trade_size"] * (pnl / 100)
                     all_trade_logs[symbol]["trade_size"].append(round(trade["trade_size"], 4))
@@ -937,23 +939,25 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
                 if not acc:
                     continue
                 acc = acc[0] if isinstance(acc, list) else acc
+                if acc < 0.6:
+                    acc = 0.0
                 window = feature_array[i - window_size:i]
                 X_scaled = scale_live_window(window, m["scaler"])
                 prediction = conf_eval_live(
-                    m["lstm"], m["cnn"], X_scaled,
+                    m, X_scaled,
                     c["use_cnn"], c["use_lstm"],
-                    c["prop_threshold"], c["cnn_threshold"],
+                    c["prop_threshold"], c["cnn_threshold"],c["market_bias"]
                 )
                 if prediction != -1:
                     fill_stats[symbol]["attempts"] += 1
                     direction = "LONG" if prediction == 1 else "SHORT"
                     candle_open = float(feature_array[i, close_idx])
 
-                    # look at next 8 candles (24h) for fill
+                    # look at next 4 candles (12h) for fill
                     window_end = min(i + 4, min_len - 1)
                     next_candles = feature_array[i:window_end, :]
 
-                    dip_pct = c["DIP_PCT"] * 0.7
+                    dip_pct = c["DIP_PCT"] * 0.5
 
                     if direction == "LONG":
                         entry_price = candle_open * (1 - dip_pct)
@@ -974,7 +978,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
                         "entry": entry_price,
                         "close_at": i + horizon,
                         "opened": candle_time,
-                        "trade_size": max(0,balance) * 0.15 * (acc/100),
+                        "trade_size": max(0,balance) * 0.20 * (acc/100),
                     })
 
 
@@ -1034,13 +1038,17 @@ def test_live(training_time,config,resample_hours,window_days,horizon):
         cnn = CNNModel(input_size=input_size,num_filters=cnn_cfg["num_filters"],kernel_size=cnn_cfg["kernel_size"],dropout=cnn_cfg["dropout"]).to(device)
         cnn.load_state_dict(torch.load(f"{dataset_dir}/42_cnn_model.pt", map_location=device))
         cnn.eval()
+        dataset_dir = Path(dataset_dir)
 
-
-
+        features_path = dataset_dir / "features.json"
+        with open(features_path, 'r') as f:
+            features = json.load(f)
         symbol_models[s] = {
             "lstm": lstm,
             "cnn": cnn,
             "scaler": joblib.load(f"{dataset_dir}/scaler.pkl"),
+            "hmm":joblib.load(f"{dataset_dir}/hmm.pkl"),
+            "features": features
         }
 
 
@@ -1056,7 +1064,11 @@ def test_live(training_time,config,resample_hours,window_days,horizon):
                     X = scale_live_window(X,m["scaler"])
                     X = torch.tensor(X).to(device)
 
-                    prediction = conf_eval_live(m["lstm"], m["cnn"], m["lr"], m["mlp"],  X,c["use_cnn"],c["use_ltsm"],c["use_mlp"],c["use_lr"],c["prop_threshold"],c["cnn_threshold"],c["mlp_threshold"],c["lr_threshold"])
+                    prediction = conf_eval_live(
+                        m, X,
+                        c["use_cnn"], c["use_lstm"],
+                        c["prop_threshold"], c["cnn_threshold"], c["market_bias"]
+                    )
                     if prediction != -1:
                         if prediction == 0:
                             trade = "SHORT"

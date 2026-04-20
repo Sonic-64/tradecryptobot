@@ -4,8 +4,8 @@
   "Close",
   "volume_zscore",
   "funding_z",
-  "pct_change",
+  "distance_to_high",
+  "distance_to_low",
   "taker_buy_ratio",
-  "bb_position",
   "bb_width"
 ]

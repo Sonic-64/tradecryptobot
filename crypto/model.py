@@ -8,7 +8,136 @@ from pathlib import Path
 import json
 import torch
 import torch.nn as nn
+from hmmlearn.hmm import GaussianHMM
 import torch.nn.functional as F
+
+
+class HMMRegime:
+    # fixed feature order — column 0 is ALWAYS r1
+    # so means_[:, 0] is safe for state labeling
+    FEATURES = ['r1', 'r8', 'vol', 'vol_z']
+
+    def __init__(self, features_config=None):
+        # features_config kept for backward compat but ignored
+        # FEATURES is now fixed for stability
+        self.model = GaussianHMM(
+            n_components=3,
+            covariance_type="full",
+            n_iter=1000,
+            random_state=42,
+        )
+        self.state_map = None
+
+    def _features(self, df):
+        """
+        FIX 1: use NaN rows instead of zero-padding.
+        Zero-padding made HMM think "0 return" was a real regime observation.
+        """
+        close = df["Close"].values.astype(np.float64)
+        N = len(close)
+        out = np.full((N, 4), np.nan)
+
+        # r1: 1-candle log return (column 0 — used for state labeling)
+        out[1:, 0] = np.log(close[1:] / (close[:-1] + 1e-10))
+
+        # r8: 8-candle log return (24h momentum)
+        out[8:, 1] = np.log(close[8:] / (close[:-8] + 1e-10))
+
+        # vol: rolling 10-candle std (volatility regime)
+        vol = pd.Series(close).pct_change().rolling(10).std()
+        out[:, 2] = vol.values
+
+        # vol_z: volume z-score
+        if "volume_zscore" in df.columns:
+            out[:, 3] = df["volume_zscore"].values.astype(np.float64)
+        else:
+            out[:, 3] = 0.0
+
+        return out  # (N, 4) — first ~10 rows are NaN
+
+    def _clean(self, X):
+        """Drop NaN rows."""
+        mask = ~np.isnan(X).any(axis=1)
+        return X[mask]
+
+    def fit(self, df):
+        X_raw = self._clean(self._features(df))
+
+
+
+        self.model.fit(X_raw)
+
+        # state labeling — identical to original
+        # safe because column 0 is always r1 (fixed FEATURES order)
+        score = self.model.means_[:, 0] + 1 * self.model.means_[:, 0]
+        order = np.argsort(score)
+        self.state_map = {
+            int(order[0]): "bearish",
+            int(order[1]): "sideways",
+            int(order[2]): "bullish",
+        }
+
+    def transform(self, df):
+        """Label full sequence — identical output format to original."""
+        X_raw = self._clean(self._features(df))
+
+
+        states = self.model.predict(X_raw)
+        probs = self.model.predict_proba(X_raw)
+
+        # pad back to original length with neutral values
+        N = len(df)
+        pad = N - len(states)
+        states = np.pad(states, (pad, 0), constant_values=1)
+        probs = np.pad(probs, ((pad, 0), (0, 0)),
+                       constant_values=1 / 3)
+
+        n = len(states)
+        bull = np.zeros(n)
+        bear = np.zeros(n)
+        side = np.zeros(n)
+
+        for i in range(3):
+            label = self.state_map[i]
+            if label == "bullish":
+                bull += probs[:, i]
+            elif label == "bearish":
+                bear += probs[:, i]
+            else:
+                side += probs[:, i]
+
+        return {
+            "bull_prob": bull,
+            "bear_prob": bear,
+            "side_prob": side,
+            "states": states,
+        }
+
+    def predict_window(self, df_window):
+        """
+        Classify regime for a SINGLE window (full sequence).
+        Returns dict with scalar values (last timestep only).
+        """
+        X_raw = self._clean(self._features(df_window))
+
+        if len(X_raw) < 10:
+            return {"bull_prob": 1 / 3, "bear_prob": 1 / 3, "side_prob": 1 / 3}
+
+
+        probs = self.model.predict_proba(X_raw)  # (T, 3)
+
+        last = probs[-1]  # last timestep probabilities
+        bull = sum(last[i] for i, n in self.state_map.items() if n == "bullish")
+        bear = sum(last[i] for i, n in self.state_map.items() if n == "bearish")
+        side = sum(last[i] for i, n in self.state_map.items() if n == "sideways")
+
+        return {"bull_prob": bull, "bear_prob": bear, "side_prob": side}
+
+    def save(self, path):
+        joblib.dump(self, path)
+
+    def load(cls, path):
+        return joblib.load(path)
 class WeightedBCELoss(nn.Module):
     """
     BCEWithLogitsLoss weighted by absolute price change magnitude.
@@ -59,7 +188,44 @@ class WeightedBCELoss(nn.Module):
         return (bce * weights).mean()
 # Version with both improvements but simpler combination
 
+class WeightedBrierLoss(nn.Module):
+    """
+    Weighted Brier score — squared error weighted by move size.
 
+    Brier:          (p - y)²
+    Weighted Brier: w × (p - y)²   where w = f(|price_change|)
+
+    advantages over WeightedBCE:
+      - naturally bounded loss (max per sample = 1.0)
+      - gentler gradients → more stable training
+      - better calibration in practice
+      - probabilities stay in useful range (0.4-0.6)
+
+    disadvantages:
+      - weaker signal discrimination near extremes
+      - BCE better at pushing confident predictions
+        further toward 0/1
+    """
+
+    def __init__(self, scale=60.0, min_w=0.20, max_w=3.0):
+        super().__init__()
+        self.scale = scale
+        self.min_w = min_w
+        self.max_w = max_w
+
+    def forward(self, logits:torch.Tensor, labels:torch.Tensor, price_changes:torch.Tensor):
+        # apply sigmoid to get probabilities
+        probs = torch.sigmoid(logits)  # (B, 1)
+
+        # squared error per sample
+        brier = (probs - labels) ** 2  # (B, 1)
+
+        # weight by move magnitude
+        weights = (price_changes.abs() * self.scale).clamp(
+            self.min_w, self.max_w
+        )  # (B, 1)
+
+        return (brier * weights).mean()
 class LSTMModel(nn.Module):
     def __init__(self, input_size, hidden_size=64, num_layers=2, dropout=0.3):
         super().__init__()
@@ -189,81 +355,6 @@ class CNNModel(nn.Module):
 
 
 
-class CryptoEnsemble:
-    """
-    Load multiple trained models and make ensemble predictions
-    """
-
-    def __init__(self, dataset_dir,model_type="binary_model", device='cpu'):
-        self.device = device
-        self.models = []
-        self.price_models = []
-        self.scalers = []
-        self.weights = []
-
-        # Load ensemble info
-        ensemble_path = Path(dataset_dir) / "ensemble_info.json"
-        if not ensemble_path.exists():
-            raise FileNotFoundError(f"No ensemble info found at {ensemble_path}")
-
-        with open(ensemble_path, 'r') as f:
-            self.info = json.load(f)
-
-        # Load model config
-        config_path = Path(dataset_dir) / "model_config.json"
-        with open(config_path, 'r') as f:
-            self.config = json.load(f)
-
-        # Load each model
-        for i, seed in enumerate(self.info['seeds']):
-            # Load scaler
-            scaler_path = Path(dataset_dir) / "scaler.pkl"
-            scaler = joblib.load(scaler_path)
-            self.scalers.append(scaler)
-
-            # Load model
-            model = ImprovedLSTMModel(
-                input_size=self.config['input_size'],
-                hidden_size=self.config['hidden_size'],
-                num_layers=self.config['num_layers'],
-                dropout=self.config['dropout']
-            ).to(device)
-
-            model_path = Path(dataset_dir) / f"{seed}_{model_type}.pt"
-            model.load_state_dict(torch.load(model_path, map_location=device))
-            model.eval()
-
-            self.models.append(model)
-
-        # Get weights (use validation accuracy)
-
-    def predict(self, X_raw):
-        """
-        X_raw: numpy array of shape (T, F) - raw unscaled window
-        Returns: ensemble probability and predicted change
-        """
-        all_probs = []
-        all_changes = []
-
-        for i, (model, scaler) in enumerate(zip(self.models, self.scalers)):
-            # Scale using this model's scaler
-            T, F = X_raw.shape
-            X_scaled = scaler.transform(X_raw.reshape(-1, F)).reshape(1, T, F)
-            X_tensor = torch.tensor(X_scaled, dtype=torch.float32).to(self.device)
-
-            # Predict
-            with torch.no_grad():
-                logits = model(X_tensor)
-                prob = torch.sigmoid(logits).item()
-
-            all_probs.append(prob)
-
-        # Weighted average
-        ensemble_prob = np.average(all_probs, weights=self.weights)
-
-        # Calculate agreement (standard deviation of predictions) # Normalized 0-1
-
-        return ensemble_prob,
 
 # Test if code runs
 class FocalLoss(nn.Module):

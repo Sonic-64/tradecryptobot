@@ -25,11 +25,13 @@ def _compute_score(accuracy_pct,coverage):
         return 0
 
     acc = accuracy_pct/100
-    base = (2 * acc - 0.1)
+    base = (2 * acc - 0.2)
     if base <= 0:
         return 0
-    coverage_factor = coverage ** 1.0
-    return round(math.log(2*acc - 0.1) * coverage_factor, 6)
+    coverage_factor = coverage ** 1
+    if acc < 0.6:
+        return 0
+    return round(math.log(2*acc) * coverage_factor, 6)
 def load_eval_results(dataset_dir):
     path = Path(dataset_dir) / "eval_results.json"
     if not path.exists():
@@ -47,10 +49,10 @@ def load_eval_results(dataset_dir):
 
     return data
 def insert_eval_results(row,new_result):
-    key = (new_result['use_lstm'], new_result['use_cnn'],new_result['threshold'],new_result['cnn_threshold'])
+    key = (new_result['use_lstm'], new_result['use_cnn'],new_result['threshold'],new_result['cnn_threshold'],new_result["market_bias"])
 
     for existing in row:
-        existing_key = (existing['use_lstm'], existing['use_cnn'],existing['threshold'],existing['cnn_threshold'])
+        existing_key = (existing['use_lstm'], existing['use_cnn'],existing['threshold'],existing['cnn_threshold'],existing["market_bias"])
         if existing_key == key:
             existing['accuracy'].append(new_result['accuracy'])
             existing['num_trades'].append(new_result['num_trades'])
@@ -76,6 +78,7 @@ def insert_eval_results(row,new_result):
         'use_cnn': new_result['use_cnn'],
         'threshold':new_result['threshold'],
         'cnn_threshold':new_result['cnn_threshold'],
+        'market_bias':new_result['market_bias'],
         'accuracy': new_result['accuracy'],
         'accuracy_avg':new_result['accuracy'],
         'accuracy_avg_weighted':new_result['accuracy'],
@@ -98,6 +101,7 @@ def get_best_config(dataset_dir,get_acc=False):
         "use_cnn": False,
         "prop_threshold": 0.0,
         "cnn_threshold":0.0,
+        "market_bias":0.0,
         "accuracy": 0,
         "coverage": 0,
         "score":0,
@@ -119,6 +123,7 @@ def get_best_config(dataset_dir,get_acc=False):
                 result['coverage'] = exists['coverage_avg']
                 result['use_cnn'] = exists['use_cnn']
                 result['use_lstm'] = exists['use_lstm']
+                result['market_bias'] = exists['market_bias']
                 result['prop_threshold'] = exists['threshold']
                 result['cnn_threshold'] = exists['cnn_threshold']
                 result['score'] = exists['score']
@@ -130,6 +135,7 @@ def get_best_config(dataset_dir,get_acc=False):
                 result['coverage'] = exists['coverage_avg']
                 result['use_cnn'] = exists['use_cnn']
                 result['use_lstm'] = exists['use_lstm']
+                result['market_bias'] = exists['market_bias']
                 result['prop_threshold'] = exists['threshold']
                 result['cnn_threshold'] = exists['cnn_threshold']
                 result['score'] = exists['score']

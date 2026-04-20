@@ -199,12 +199,12 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     # Dodaj małą stałą aby uniknąć dzielenia przez 0
     df_resampled['volume_zscore'] = (df_resampled['Volume'] - volume_mean) / (volume_std + 1e-8)
     df_resampled['volume_zscore'] = df_resampled['volume_zscore'].clip(-5, 5)
-    funding_mean = df_resampled['funding_rate'].rolling(window=224,min_periods=1).mean()
-    funding_std = df_resampled['funding_rate'].rolling(window=224,min_periods=1).std()
+    funding_mean = df_resampled['funding_rate'].rolling(window=56,min_periods=1).mean()
+    funding_std = df_resampled['funding_rate'].rolling(window=56,min_periods=1).std()
     df_resampled['funding_z'] = (df_resampled['funding_rate']-funding_mean)/(funding_std+1e-10)
-    df_resampled['funding_z'] = df_resampled['volume_zscore'].clip(-5,5)
-    df_resampled['local_ATH'] = df_resampled['Close'].rolling(window=224, min_periods=1).max()
-    df_resampled['local_ATL'] = df_resampled['Close'].rolling(window=224, min_periods=1).min()
+    df_resampled['funding_z'] = df_resampled['funding_z'].clip(-5,5)
+    df_resampled['local_ATH'] = df_resampled['High'].rolling(window=224, min_periods=1).max()
+    df_resampled['local_ATL'] = df_resampled['Low'].rolling(window=224, min_periods=1).min()
     df_resampled['pct_change'] = df_resampled['Close'].pct_change(periods=8,fill_method=None)
     df_resampled['pct_change'] = df_resampled['pct_change'].fillna(0.0)
     is_ath = df_resampled['Close'] == df_resampled['local_ATH']
@@ -225,8 +225,8 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
 
     # 2. VOLATILITY RATIO (short-term vs long-term volatility)
     # Short-term volatility (6 periods = ~1.5 days for 6h candles)
-
-    df_resampled['trend_slope_long'] = rolling_slope(df_resampled['Close'], window=224)
+    df_resampled['adj_close'] = (df_resampled['Close'] + df_resampled['High'] + df_resampled['Low'])/3
+    df_resampled['trend_slope_long'] = rolling_slope(df_resampled['adj_close'], window=224)
     # 3. VOLUME-PRICE CORRELATION (smart money detection)
     # 20-period rolling correlation between volume and price
     delta = df_resampled['Close'].diff()
@@ -250,15 +250,15 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     # RSI with safe division
     # Volatility
     df_resampled['hour'] =  df_resampled.index.hour
-    bb_ma = df_resampled['Close'].rolling(20).mean()
-    bb_std = df_resampled['Close'].rolling(20).std()
+    bb_ma = df_resampled['adj_close'].rolling(40).mean()
+    bb_std = df_resampled['adj_close'].rolling(40).std()
     df_resampled['bb_upper'] = bb_ma + (bb_std * 2)
     df_resampled['bb_lower'] = bb_ma - (bb_std * 2)
     df_resampled['bb_position'] = (df_resampled['Close'] - df_resampled['bb_lower']) / ( df_resampled['bb_upper'] - df_resampled['bb_lower'] + 1e-8)
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','trend_slope_long','RSI','Number of Trades','hour','funding_rate','time_local_Low','time_local_High','distance_to_high','distance_to_low', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','pct_change','bb_position','adj_close','trend_slope_long','RSI','Number of Trades','hour','funding_rate','time_local_Low','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()
@@ -531,18 +531,21 @@ def make_dataset(
     Returns:
         Tuple of (X, y, feature_names)
     """
+    outdir_path = Path(f"{symbol}_{window_days}_{resample_hours}_{horizon}")
+    outdir_path.mkdir(parents=True, exist_ok=True)
     df_raw = download_data(symbol, months,cutoff=cutoff)
 
     df_raw = df_raw[df_raw.index >= df_raw.index[0].ceil('D')]
 
     df_features, feature_names = compute_features(df_raw, resample_hours)
 
+    df_features.to_csv(f"{outdir_path}/df.csv")
+
     X, y = build_windows(df_features, window_days, resample_hours, horizon, step)
 
-    
+
     # Create output directory
-    outdir_path = Path(f"{symbol}_{window_days}_{resample_hours}_{horizon}")
-    outdir_path.mkdir(parents=True, exist_ok=True)
+
 
     # Save arrays
     x_path = outdir_path / "X.npy"
@@ -592,33 +595,6 @@ def safe_float(value):
         except ValueError:
             return 0.0
     return 0.0
-
-
-
-
-
-# Backward compatibility: keep get_training_data for existing code
-def get_training_data(symbol, days, months=-1, interval=12):
-    """
-    Legacy function for backward compatibility.
-    Use make_dataset() or main() for new code.
-    """
-    df = download_data(symbol=symbol, months=months)
-    window_hours = days * 24
-    resample_hours = interval
-    
-    df_features, feature_names = compute_features(df, resample_hours)
-    
-    # Use default horizon=1, step=1
-    X, y = build_windows(df_features, days, resample_hours, horizon=1, step=1)
-    
-    return X, y, feature_names
-
-
-# Token/Wallet data collection functions (stubs for backward compatibility)
-# NOTE: These functions were removed during refactoring as they are part of a different
-# API-based token data collection system. They need to be re-implemented based on
-# your original API integration code.
 
 
 
