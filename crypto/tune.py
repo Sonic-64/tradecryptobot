@@ -49,10 +49,10 @@ def load_eval_results(dataset_dir):
 
     return data
 def insert_eval_results(row,new_result):
-    key = (new_result['use_lstm'], new_result['use_cnn'],new_result['threshold'],new_result['cnn_threshold'],new_result["market_bias"])
+    key = (new_result['use_lstm'], new_result['use_cnn'],new_result['threshold'],new_result['cnn_threshold'])
 
     for existing in row:
-        existing_key = (existing['use_lstm'], existing['use_cnn'],existing['threshold'],existing['cnn_threshold'],existing["market_bias"])
+        existing_key = (existing['use_lstm'], existing['use_cnn'],existing['threshold'],existing['cnn_threshold'])
         if existing_key == key:
             existing['accuracy'].append(new_result['accuracy'])
             existing['num_trades'].append(new_result['num_trades'])
@@ -78,7 +78,6 @@ def insert_eval_results(row,new_result):
         'use_cnn': new_result['use_cnn'],
         'threshold':new_result['threshold'],
         'cnn_threshold':new_result['cnn_threshold'],
-        'market_bias':new_result['market_bias'],
         'accuracy': new_result['accuracy'],
         'accuracy_avg':new_result['accuracy'],
         'accuracy_avg_weighted':new_result['accuracy'],
@@ -101,7 +100,6 @@ def get_best_config(dataset_dir,get_acc=False):
         "use_cnn": False,
         "prop_threshold": 0.0,
         "cnn_threshold":0.0,
-        "market_bias":0.0,
         "accuracy": 0,
         "coverage": 0,
         "score":0,
@@ -123,7 +121,6 @@ def get_best_config(dataset_dir,get_acc=False):
                 result['coverage'] = exists['coverage_avg']
                 result['use_cnn'] = exists['use_cnn']
                 result['use_lstm'] = exists['use_lstm']
-                result['market_bias'] = exists['market_bias']
                 result['prop_threshold'] = exists['threshold']
                 result['cnn_threshold'] = exists['cnn_threshold']
                 result['score'] = exists['score']
@@ -135,7 +132,6 @@ def get_best_config(dataset_dir,get_acc=False):
                 result['coverage'] = exists['coverage_avg']
                 result['use_cnn'] = exists['use_cnn']
                 result['use_lstm'] = exists['use_lstm']
-                result['market_bias'] = exists['market_bias']
                 result['prop_threshold'] = exists['threshold']
                 result['cnn_threshold'] = exists['cnn_threshold']
                 result['score'] = exists['score']

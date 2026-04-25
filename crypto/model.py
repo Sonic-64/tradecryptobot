@@ -23,7 +23,8 @@ class HMMRegime:
         self.model = GaussianHMM(
             n_components=3,
             covariance_type="full",
-            n_iter=1000,
+            n_iter=2000,
+            min_covar=0.001,
             random_state=42,
         )
         self.state_map = None
@@ -33,27 +34,34 @@ class HMMRegime:
         FIX 1: use NaN rows instead of zero-padding.
         Zero-padding made HMM think "0 return" was a real regime observation.
         """
-        close = df["Close"].values.astype(np.float64)
+        close = df['Close'].values.astype(np.float64)
+        distance_to_high = df["distance_to_high"].rolling(window=8,min_periods=1).mean().values.astype(np.float64)
+        funding_z = df["funding_z"].rolling(window=8,min_periods=1).mean().values.astype(np.float64)
+        trend = df["trend_slope_short"].values.astype(np.float64)
+        volume = df["volume_zscore"].values.astype(np.float64)
+        taker_ratio = df["taker_buy_ratio"].rolling(window=40,min_periods=1).mean().values.astype(np.float64)
+
         N = len(close)
         out = np.full((N, 4), np.nan)
 
-        # r1: 1-candle log return (column 0 — used for state labeling)
-        out[1:, 0] = np.log(close[1:] / (close[:-1] + 1e-10))
+        # --- 1. STRONG DIRECTION (core signal)
+        r1 = np.log(close[1:] / (close[:-1] + 1e-10))
 
-        # r8: 8-candle log return (24h momentum)
-        out[8:, 1] = np.log(close[8:] / (close[:-8] + 1e-10))
 
-        # vol: rolling 10-candle std (volatility regime)
-        vol = pd.Series(close).pct_change().rolling(10).std()
-        out[:, 2] = vol.values
+        out[1:, 0] = r1
+        # --- 2. MEDIUM-TERM TREND
+        r8 = np.log(close[8:] / (close[:-8] + 1e-10))
+        out[8:, 1] = r8
 
-        # vol_z: volume z-score
-        if "volume_zscore" in df.columns:
-            out[:, 3] = df["volume_zscore"].values.astype(np.float64)
-        else:
-            out[:, 3] = 0.0
+        # --- 3. TREND STRENGTH (not volatility!)
 
-        return out  # (N, 4) — first ~10 rows are NaN
+        out[:, 2] = taker_ratio
+        out[:, 3] = trend
+
+
+
+
+        return out
 
     def _clean(self, X):
         """Drop NaN rows."""
@@ -69,7 +77,7 @@ class HMMRegime:
 
         # state labeling — identical to original
         # safe because column 0 is always r1 (fixed FEATURES order)
-        score = self.model.means_[:, 0] + 1 * self.model.means_[:, 0]
+        score = self.model.means_[:, 0] + 0.5 * self.model.means_[:, 1]
         order = np.argsort(score)
         self.state_map = {
             int(order[0]): "bearish",
@@ -161,12 +169,14 @@ class WeightedBCELoss(nn.Module):
         self,
         scale:  float = 20.0,   # multiplier on raw price change
         min_w:  float = 0.25,   # floor — never fully ignore small moves
-        max_w:  float = 2.0,    # ceiling — don't let outliers dominate
+        max_w:  float = 2.0,
+        pos_weight: float = 1.0,# ceiling — don't let outliers dominate
     ):
         super().__init__()
         self.scale = scale
         self.min_w = min_w
         self.max_w = max_w
+        self.pos_weight = pos_weight
 
     def forward(
         self,
@@ -179,13 +189,13 @@ class WeightedBCELoss(nn.Module):
         bce = nn.functional.binary_cross_entropy_with_logits(
             logits, labels, reduction='none'
         )   # (B, 1)
-
+        class_weights = labels * self.pos_weight + (1 - labels) * 1.0
         # weight = f(|price_change|)
         weights = (price_changes.abs() * self.scale).clamp(
             self.min_w, self.max_w
         )   # (B, 1)
 
-        return (bce * weights).mean()
+        return (bce * weights*class_weights).mean()
 # Version with both improvements but simpler combination
 
 class WeightedBrierLoss(nn.Module):

@@ -199,8 +199,8 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     # Dodaj małą stałą aby uniknąć dzielenia przez 0
     df_resampled['volume_zscore'] = (df_resampled['Volume'] - volume_mean) / (volume_std + 1e-8)
     df_resampled['volume_zscore'] = df_resampled['volume_zscore'].clip(-5, 5)
-    funding_mean = df_resampled['funding_rate'].rolling(window=56,min_periods=1).mean()
-    funding_std = df_resampled['funding_rate'].rolling(window=56,min_periods=1).std()
+    funding_mean = df_resampled['funding_rate'].rolling(window=224,min_periods=1).mean()
+    funding_std = df_resampled['funding_rate'].rolling(window=224,min_periods=1).std()
     df_resampled['funding_z'] = (df_resampled['funding_rate']-funding_mean)/(funding_std+1e-10)
     df_resampled['funding_z'] = df_resampled['funding_z'].clip(-5,5)
     df_resampled['local_ATH'] = df_resampled['High'].rolling(window=224, min_periods=1).max()
@@ -226,7 +226,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     # 2. VOLATILITY RATIO (short-term vs long-term volatility)
     # Short-term volatility (6 periods = ~1.5 days for 6h candles)
     df_resampled['adj_close'] = (df_resampled['Close'] + df_resampled['High'] + df_resampled['Low'])/3
-    df_resampled['trend_slope_long'] = rolling_slope(df_resampled['adj_close'], window=224)
+    df_resampled['trend_slope_short'] = rolling_slope(df_resampled['adj_close'], window=56)
     # 3. VOLUME-PRICE CORRELATION (smart money detection)
     # 20-period rolling correlation between volume and price
     delta = df_resampled['Close'].diff()
@@ -258,7 +258,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','pct_change','bb_position','adj_close','trend_slope_long','RSI','Number of Trades','hour','funding_rate','time_local_Low','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','pct_change','bb_position','adj_close','RSI','Number of Trades','hour','funding_rate','time_local_Low','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()

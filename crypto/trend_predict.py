@@ -6,6 +6,93 @@ import numpy as np
 import pandas as pd
 from .model import HMMRegime
 import matplotlib.pyplot as plt
+def regime_separation_score(df, hmm):
+    out = hmm.transform(df)
+
+    df = df.copy()
+    df["state"] = out["states"]
+    df["ret"] = df["Close"].pct_change()
+    df["up"] = (df["ret"] > 0).astype(int)
+
+    up_rates = []
+
+    for s in sorted(df["state"].unique()):
+        sub = df[df["state"] == s]
+        if len(sub) < 50:
+            continue
+        up_rates.append(sub["up"].mean())
+
+    if len(up_rates) < 2:
+        return 0.0
+
+    score = max(up_rates) - min(up_rates)
+
+    print(f"\nSeparation score: {score:.3f}")
+    return score
+def regime_distribution(df, hmm):
+    out = hmm.transform(df)
+    states = out["states"]
+
+    unique, counts = np.unique(states, return_counts=True)
+    total = len(states)
+
+    print("\n=== HARD REGIME DISTRIBUTION ===")
+
+    for s, c in zip(unique, counts):
+        pct = c / total * 100
+        label = hmm.state_map.get(int(s), str(s))
+        print(f"State {s} ({label}): {pct:.2f}% ({c})")
+def regime_soft_distribution(df, hmm):
+    out = hmm.transform(df)
+
+    bull = out["bull_prob"].mean()
+    bear = out["bear_prob"].mean()
+    side = out["side_prob"].mean()
+
+    print("\n=== SOFT REGIME DISTRIBUTION ===")
+    print(f"Bullish : {bull*100:.2f}%")
+    print(f"Bearish : {bear*100:.2f}%")
+    print(f"Sideways: {side*100:.2f}%")
+def regime_confidence(df, hmm):
+    out = hmm.transform(df)
+
+    probs = np.stack([
+        out["bull_prob"],
+        out["bear_prob"],
+        out["side_prob"]
+    ], axis=1)
+
+    max_prob = probs.max(axis=1)
+
+    print("\n=== REGIME CONFIDENCE ===")
+    print(f"Avg max prob: {max_prob.mean():.3f}")
+def regime_dominance(df, hmm):
+    out = hmm.transform(df)
+
+    dominant = np.argmax(
+        np.stack([
+            out["bull_prob"],
+            out["bear_prob"],
+            out["side_prob"]
+        ], axis=1),
+        axis=1
+    )
+
+    unique, counts = np.unique(dominant, return_counts=True)
+    total = len(dominant)
+
+    print("\n=== DOMINANT REGIME (SOFT) ===")
+
+    names = ["bull", "bear", "side"]
+
+    for i, c in zip(unique, counts):
+        print(f"{names[i]}: {c/total*100:.2f}%")
+def full_regime_diagnostics(df, hmm):
+    regime_distribution(df, hmm)
+    regime_soft_distribution(df, hmm)
+    regime_confidence(df, hmm)
+    regime_dominance(df, hmm)
+    regime_separation_score(df,hmm)
 def get_hmm_signal_from_batch(xb, scaler, hmm, feature_names, hmm_weight=0.2):
     xb_np = xb.cpu().numpy()   # (B, T, F)
     B, T, F = xb_np.shape
@@ -130,8 +217,8 @@ def test_hmm(dataset_dir):
     df = df.iloc[-len(X_raw):]
 
     N = len(df)
-    train_end = int(0.8 * N)
-    val_end = int(0.94 * N)
+    train_end = int(0.75 * N)
+    val_end = int(0.9 * N)
 
     df_train = df.iloc[:train_end]
     df_val = df.iloc[train_end:val_end]
@@ -152,7 +239,10 @@ def test_hmm(dataset_dir):
 
     hmm = HMMRegime()
     hmm.fit(df_train)
-
+    print("train regime diagnosis:")
+    full_regime_diagnostics(df_train,hmm)
+    print("test regime diagnosis:")
+    full_regime_diagnostics(df_val,hmm)
 
 
 
@@ -163,7 +253,6 @@ def test_hmm(dataset_dir):
     symbol = dataset_dir.split("_")[0]
     hmm = HMMRegime()
     hmm.fit(df_train)
-    plot_hmm_states(df_val, hmm, title=f"{symbol} HMM (VAL)")
     print("\n📊 FINAL MODEL:")
     loglik, persistence = evaluate_hmm(hmm, df_val, "FINAL")
     evaluate_full(hmm,df_train, df_val)
