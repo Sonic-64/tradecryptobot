@@ -22,7 +22,7 @@ class HMMRegime:
         self.model = GaussianHMM(
             n_components=3,
             covariance_type="diag",
-            n_iter=500,
+            n_iter=200,
             min_covar=0.02,
             random_state=42,
         )
@@ -53,8 +53,12 @@ class HMMRegime:
 
         # --- 3. TREND STRENGTH (not volatility!)
 
+        vol = pd.Series(r1).rolling(20).std().values
+        trend = pd.Series(r1).rolling(20).mean().values
+
         out[:, 2] = taker_ratio
-        out[:, 3] = distance_to_high
+        out[1:, 3] = trend / (vol + 1e-6)
+
 
 
 

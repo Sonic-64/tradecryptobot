@@ -11,8 +11,11 @@ def regime_separation_score(df, hmm):
 
     df = df.copy()
     df["state"] = out["states"]
-    df["ret"] = df["Close"].pct_change(8)
+
+    df["ret"] = df["Close"].pct_change(8).shift(-8)
     df["up"] = (df["ret"] > 0).astype(int)
+    df.dropna()
+
 
     up_rates = []
 
