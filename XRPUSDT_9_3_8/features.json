@@ -6,7 +6,6 @@
   "funding_z",
   "distance_to_high",
   "distance_to_low",
-  "trend_slope_short",
   "taker_buy_ratio",
   "bb_width"
 ]

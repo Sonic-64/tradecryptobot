@@ -15,16 +15,15 @@ import torch.nn.functional as F
 class HMMRegime:
     # fixed feature order — column 0 is ALWAYS r1
     # so means_[:, 0] is safe for state labeling
-    FEATURES = ['r1', 'r8', 'vol', 'vol_z']
 
     def __init__(self, features_config=None):
         # features_config kept for backward compat but ignored
         # FEATURES is now fixed for stability
         self.model = GaussianHMM(
             n_components=3,
-            covariance_type="full",
-            n_iter=2000,
-            min_covar=0.001,
+            covariance_type="diag",
+            n_iter=500,
+            min_covar=0.02,
             random_state=42,
         )
         self.state_map = None
@@ -37,12 +36,11 @@ class HMMRegime:
         close = df['Close'].values.astype(np.float64)
         distance_to_high = df["distance_to_high"].rolling(window=8,min_periods=1).mean().values.astype(np.float64)
         funding_z = df["funding_z"].rolling(window=8,min_periods=1).mean().values.astype(np.float64)
-        trend = df["trend_slope_short"].values.astype(np.float64)
         volume = df["volume_zscore"].values.astype(np.float64)
-        taker_ratio = df["taker_buy_ratio"].rolling(window=40,min_periods=1).mean().values.astype(np.float64)
+        taker_ratio = df["taker_buy_ratio"].rolling(window=20,min_periods=1).mean().values.astype(np.float64)
 
         N = len(close)
-        out = np.full((N, 4), np.nan)
+        out = np.full((N,4 ), np.nan)
 
         # --- 1. STRONG DIRECTION (core signal)
         r1 = np.log(close[1:] / (close[:-1] + 1e-10))
@@ -56,8 +54,7 @@ class HMMRegime:
         # --- 3. TREND STRENGTH (not volatility!)
 
         out[:, 2] = taker_ratio
-        out[:, 3] = trend
-
+        out[:, 3] = distance_to_high
 
 
 
