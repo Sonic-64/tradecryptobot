@@ -40,6 +40,9 @@ def get_tradable_futures_symbols():
                 pass
 
     return symbols
+def align_to_hour(ts_ms):
+    # floor to full hour
+    return int((ts_ms // (3600 * 1000)) * (3600 * 1000))
 def get_price_at(symbol, dt):
     """Get price at a specific datetime, minute accurate"""
     ts = int(dt.timestamp() * 1000)
@@ -84,6 +87,9 @@ def fetch_all_funding_rates(symbol="BTCUSDT", start_time=None, end_time=None):
     df["fundingRate"] = df["fundingRate"].astype(float)
 
     return df[["fundingTime", "fundingRate"]]
+
+
+
 def align_funding(funding_df, price_df):
     funding_df = funding_df.set_index("fundingTime").sort_index()
 
@@ -138,6 +144,8 @@ def download_data(symbol: str, months: int, interval: str = "1h",cutoff:int=0):
     # Strip timezone if present (resample expects naive or consistent tz)
     if getattr(df.index, "tz", None) is not None:
         df.index = df.index.tz_localize(None)
+
+
     funding_df = fetch_all_funding_rates(
         symbol=symbol,
         start_time=int(df.index[0].timestamp() * 1000),
@@ -187,7 +195,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
         'Number of Trades':'sum',
         'Taker Buy Base Asset Volume':'sum',
         'Taker Buy Quote Asset Volume':'sum',
-        'funding_rate':'last'
+        'funding_rate':'last',
 
 
     }).dropna()
@@ -254,11 +262,11 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     bb_std = df_resampled['adj_close'].rolling(40).std()
     df_resampled['bb_upper'] = bb_ma + (bb_std * 2)
     df_resampled['bb_lower'] = bb_ma - (bb_std * 2)
-    df_resampled['bb_position'] = (df_resampled['Close'] - df_resampled['bb_lower']) / ( df_resampled['bb_upper'] - df_resampled['bb_lower'] + 1e-8)
+    df_resampled['distance_hl_position'] = (df_resampled['Close'] - df_resampled['local_ATL'])/(df_resampled['local_ATH']-df_resampled['local_ATL']+ 1e-8)
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','trend_slope_short','pct_change','bb_position','adj_close','RSI','Number of Trades','hour','funding_rate','time_local_Low','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','trend_slope_short','pct_change','adj_close','RSI','distance_to_high','distance_to_low','Number of Trades','hour','funding_rate','time_local_Low','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()

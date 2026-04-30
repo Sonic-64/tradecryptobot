@@ -127,14 +127,203 @@ def evaluate_weighted(model, loader, device,
 
 
 
+def grid_search(model_type,dataset_dir):
+    print(f"performing grid search on model: {model_type} and dataset_dir : {dataset_dir}")
+    drop = [0.3,0.4,0.5]
+    hidden = [8,16,32]
+    layers = [2,3,4]
+    best_acc = 0
+    best_config = None
+    for hidden_size, num_layers,dropout in product(hidden,layers,drop):
+        acc,gap = train_with_params(dataset_dir, hidden_size, num_layers, dropout, model_type)
+        if acc > best_acc:
+            best_config = {
+                "hidden_size": hidden_size,
+                "num_layers": num_layers,
+                "dropout": dropout,
+            }
+    print("final_best_config")
+    print(best_config)
 
 
 
+def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN",SEED = 42, EPOCHS = 100, BATCH = 32, LR = 1e-3):
 
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.backends.cudnn.deterministic = True
+    print(f"TRAININ ON {dataset_dir}")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(SEED)
+
+    outdir_path = Path(dataset_dir)
+    x_path = outdir_path / "X.npy"
+    y_path = outdir_path / "y.npy"
+    features_path = outdir_path / "features.json"
+
+    if not x_path.exists() or not y_path.exists():
+        print(f"Dataset not found in {dataset_dir}")
+        return
+
+    dataset = NumpyDataset(x_path, y_path, features_path, filter_noise=False)
+
+    if len(dataset) == 0:
+        print("No valid training data\n")
+        exit(1)
+    pos_ratio = (dataset.y_class.sum() / len(dataset)).item()
+
+    N = len(dataset)
+    X_raw = np.load(x_path)
+    y_raw = np.load(y_path)
+    N_raw = len(X_raw)
+
+    # Define boundaries on the FULL unfiltered data
+    train_end = int(0.750 * N_raw)
+    test_end = int(0.900 * N_raw)
+    val_end = int(N_raw)
+    save_split(X_raw[0:train_end], y_raw[0:train_end], dataset_dir, "train")
+    save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
+    save_split(X_raw[test_end:val_end], y_raw[test_end:val_end], dataset_dir, "val")
+
+    train_ds = NumpyDataset(f"{outdir_path}/train_X.npy", f"{outdir_path}/train_y.npy", features_path,
+                            filter_noise=False)
+    test_ds = NumpyDataset(f"{outdir_path}/test_X.npy", f"{outdir_path}/test_y.npy", features_path, filter_noise=False)
+    val_ds = NumpyDataset(f"{outdir_path}/val_X.npy", f"{outdir_path}/val_y.npy", features_path, filter_noise=False)
+    X_train = torch.stack([train_ds[i][0] for i in range(len(train_ds))])
+    X_val = torch.stack([val_ds[i][0] for i in range(len(val_ds))])
+    X_test = torch.stack([test_ds[i][0] for i in range(len(test_ds))])
+    # ===== RESHAPE AND SCALE FEATURES =====
+    Ntr, T, F = X_train.shape
+    Nte = X_test.shape[0]
+    Nval = X_val.shape[0]
+    # Flatten time steps for scaling
+    Xtr_2d = X_train.view(-1, F).numpy()
+    Xte_2d = X_test.view(-1, F).numpy()
+    Xval_2d = X_val.view(-1, F).numpy()
+    # Fit scaler on TRAIN only and transform both train and test
+    scaler = StandardScaler()
+    Xtr_2d = scaler.fit_transform(Xtr_2d)  # ✅ Fit on train only
+    Xte_2d = scaler.transform(Xte_2d)  # ✅ Transform test
+    Xval_2d = scaler.transform(Xval_2d)
+    scaler_path = Path(dataset_dir) / "scaler.pkl"
+    # Save scaler for later use
+    joblib.dump(scaler, scaler_path)
+    y_test = torch.stack([test_ds[i][1] for i in range(len(test_ds))])
+
+    # ===== ALWAYS-UP BASELINE =====
+    always_up_acc = (y_test == 1).float().mean().item()
+
+    # Reshape back to original LSTM shape
+    X_train = torch.from_numpy(Xtr_2d).float().view(Ntr, T, F)
+    X_test = torch.from_numpy(Xte_2d).float().view(Nte, T, F)
+    X_val = torch.from_numpy(Xval_2d).float().view(Nval, T, F)
+    # ===== WRITE BACK INTO ORIGINAL DATASET STORAGE =====
+    train_ds.X = X_train
+    test_ds.X = X_test
+    val_ds.X = X_val
+
+    class_criterion = WeightedBCELoss(
+        scale=60.0, min_w=0.20, max_w=3.0
+    )
+    # Increased gamma
+    train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True)
+    test_loader = DataLoader(test_ds, batch_size=BATCH)
+    val_loader = DataLoader(val_ds, batch_size=BATCH)
+    # Get input size from the first item in dataset
+    sample_x, _, _ = dataset[0]
+    input_size = sample_x.shape[1]  # Number of features
+
+    # Slightly larger model for better capacity
+    if model_type == "LSTM":
+        model = LSTMModel(
+            input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, dropout=dropout
+
+        ).to(device)
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=LR, weight_decay=1e-3
+        )
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.9)
+    if model_type == "CNN":
+        model = CNNModel(
+            input_size=input_size,
+            num_filters=hidden_size,
+            kernel_size=num_layers,
+            dropout=dropout,
+        ).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-3)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+     # Add weight decay
+
+    # Learning rate scheduler
+
+
+
+    # Early stopping variables
+    best_acc = 0.0
+    best_brier = 1
+    patience = 40
+    patience_counter = 0
+    for epoch in range(1, EPOCHS + 1):
+        # Emphasize classification more heavily (alpha=2.0 vs beta=0.5)
+        train_loss = train(
+            model,
+            train_loader,
+            class_criterion,
+            optimizer,
+            device, weighted=True
+        )
+        test_acc, brier = evaluate_weighted(
+            model, test_loader, device
+        )
+
+        # Step the scheduler
+        scheduler.step()
+
+        # Early stopping based on accuracy
+        if test_acc > best_acc:
+            best_brier = brier
+            best_acc = test_acc
+            patience_counter = 0
+            # Save best model
+            torch.save(model.state_dict(), f"{dataset_dir}/grid_search_model.pt")
+        else:
+            patience_counter += 1
+
+        # Early stopping
+        if patience_counter >= patience:
+            break
+    model.load_state_dict(torch.load(f"{dataset_dir}/grid_search_model.pt"))
+    model.eval()
+    weighted_train, train_brier = evaluate_weighted(model, train_loader, device)
+    weighted_test, test_brier = evaluate_weighted(model, test_loader, device)
+    print(
+        f"model type : {model_type} using HIDDEN SIZE:{hidden_size} NUM FILTERS:{hidden_size} NUM LAYERS:{num_layers} KERNEL_SIZE:{num_layers} DROPOUT:{dropout}")
+    print(
+        f"  weighted  train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
+    # Load best model for final save
+
+    return weighted_test,(abs(weighted_train-weighted_test))
 # # --- Main function to run the training and evaluation to call from main.py ---
 
 
-
+def conf_eval_MOE(config,loader,prob_threshold=0.50):
+    scaler = config["scaler"]
+    features = config["features"]
+    model = config["moe"]
+    weighted_correct = 0.0
+    weighted_total = 0.0
+    all_predictions = []
+    with torch.no_grad():
+        for xb, y_class, y_change in loader:
+            xb = xb.to("cpu")
+    return
+def MOE_eval_live(config,xb,prob_threshold=0.50):
+    return
+def train_MOE(database_dir):
+    return
 def conf_eval(config,loader,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50,label=""):
     accuracy_confidence = 0.5
     weighted_correct = 0.0
@@ -363,8 +552,8 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
-    HIDDEN_SIZE = 16
-    NUM_LAYERS = 2
+    HIDDEN_SIZE = 32
+    NUM_LAYERS = 3
     KERNEL_SIZE = 4
     DROPOUT = 0.3
     DROPOUT_LSTM = 0.3

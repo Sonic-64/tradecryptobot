@@ -31,7 +31,7 @@ if __name__ == "__main__":
     parser.add_argument("--symbol",type=str,default="BTCUSDT",help="pair to train on")
     parser.add_argument("--paper_trade",action="store_true",help="Prediction mode")
     parser.add_argument("--trend_follow_backtest", action="store_true", help="Run trend following paper trade backtest")
-
+    parser.add_argument("--grid_search",action="store_true",help="grid search to find the best model config")
     args = parser.parse_args()
     crypto.load_config()
     ##.connect()
@@ -51,6 +51,22 @@ if __name__ == "__main__":
             time.sleep(1)
         for symbol in symbols:
             crypto.test_hmm(dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
+    if args.grid_search:
+        for symbol in symbols:
+            crypto.make_dataset(
+                symbol=symbol,
+                # Defaulting to BTC-USD as per original intent or make it an arg? Adding symbol arg would be good too but sticking to requested ones first.
+                months=args.months,
+                window_days=args.window_days,
+                resample_hours=args.resample_hours,
+                horizon=args.horizon,
+                step=args.step,
+                cutoff=args.cutoff
+            )
+            time.sleep(1)
+        for symbol in symbols:
+            crypto.grid_search("CNN",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
+            crypto.grid_search(model_type="LSTM",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
     if args.predict:
         crypto.eval_live(months=args.months,window_days=args.window_days,resample_hours=args.resample_hours,horizon=args.horizon)
     if args.data_fetch:

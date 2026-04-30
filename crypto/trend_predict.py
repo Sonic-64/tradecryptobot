@@ -12,7 +12,7 @@ def regime_separation_score(df, hmm):
     df = df.copy()
     df["state"] = out["states"]
 
-    df["ret"] = df["Close"].pct_change(8).shift(-8)
+    df["ret"] = df["Close"].pct_change(8)
     df["up"] = (df["ret"] > 0).astype(int)
     df.dropna()
 
@@ -219,6 +219,7 @@ def test_hmm(dataset_dir):
     print("\n📊 FINAL MODEL:")
     loglik, persistence = evaluate_hmm(hmm, df_val, "FINAL")
     evaluate_full(hmm,df_train, df_val)
+    plot_hmm_states(df_val,hmm,"train")
     # =============================
     # SAVE
     # =============================

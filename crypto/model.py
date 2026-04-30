@@ -22,7 +22,7 @@ class HMMRegime:
         self.model = GaussianHMM(
             n_components=3,
             covariance_type="diag",
-            n_iter=200,
+            n_iter=300,
             min_covar=0.02,
             random_state=42,
         )
@@ -34,13 +34,18 @@ class HMMRegime:
         Zero-padding made HMM think "0 return" was a real regime observation.
         """
         close = df['Close'].values.astype(np.float64)
-        distance_to_high = df["distance_to_high"].rolling(window=8,min_periods=1).mean().values.astype(np.float64)
-        funding_z = df["funding_z"].rolling(window=8,min_periods=1).mean().values.astype(np.float64)
+        distance = df["distance_hl_position"].rolling(window=8,min_periods=1).mean().values.astype(np.float64)
+        funding_z = df["funding_z"].values.astype(np.float64)
         volume = df["volume_zscore"].values.astype(np.float64)
-        taker_ratio = df["taker_buy_ratio"].rolling(window=20,min_periods=1).mean().values.astype(np.float64)
+        taker = df["taker_buy_ratio"].values.astype(np.float64)
+        funding_delta = np.diff(funding_z, prepend=funding_z[0])
+        funding_delta = pd.Series(funding_delta).rolling(window=8,min_periods=1).mean().values
+        taker_delta = np.diff(taker, prepend=taker[0])
+        taker_delta = pd.Series(taker_delta).rolling(8, min_periods=1).mean().values
+
 
         N = len(close)
-        out = np.full((N,4 ), np.nan)
+        out = np.full((N,4), np.nan)
 
         # --- 1. STRONG DIRECTION (core signal)
         r1 = np.log(close[1:] / (close[:-1] + 1e-10))
@@ -53,11 +58,10 @@ class HMMRegime:
 
         # --- 3. TREND STRENGTH (not volatility!)
 
-        vol = pd.Series(r1).rolling(20).std().values
-        trend = pd.Series(r1).rolling(20).mean().values
 
-        out[:, 2] = taker_ratio
-        out[1:, 3] = trend / (vol + 1e-6)
+
+        out[:, 2] = taker_delta
+        out[:, 3] = distance
 
 
 
