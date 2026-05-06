@@ -20,7 +20,7 @@ class HMMRegime:
         # features_config kept for backward compat but ignored
         # FEATURES is now fixed for stability
         self.model = GaussianHMM(
-            n_components=3,
+            n_components=2,
             covariance_type="diag",
             n_iter=300,
             min_covar=0.02,
@@ -34,7 +34,7 @@ class HMMRegime:
         Zero-padding made HMM think "0 return" was a real regime observation.
         """
         close = df['Close'].values.astype(np.float64)
-        distance = df["distance_hl_position"].rolling(window=8,min_periods=1).mean().values.astype(np.float64)
+        distance = df["distance_hl_position"].values.astype(np.float64)
         funding_z = df["funding_z"].values.astype(np.float64)
         volume = df["volume_zscore"].values.astype(np.float64)
         taker = df["taker_buy_ratio"].values.astype(np.float64)
@@ -42,7 +42,6 @@ class HMMRegime:
         funding_delta = pd.Series(funding_delta).rolling(window=8,min_periods=1).mean().values
         taker_delta = np.diff(taker, prepend=taker[0])
         taker_delta = pd.Series(taker_delta).rolling(8, min_periods=1).mean().values
-
 
         N = len(close)
         out = np.full((N,4), np.nan)
@@ -58,10 +57,11 @@ class HMMRegime:
 
         # --- 3. TREND STRENGTH (not volatility!)
 
-
-
-        out[:, 2] = taker_delta
-        out[:, 3] = distance
+        sign = (np.sign(r8))
+        sign_strength = pd.Series(sign).rolling(7, min_periods=1).mean().abs().values
+        ext_dist = pd.Series(distance * 2 - 1).rolling(16, min_periods=1).mean().abs().values
+        out[8:, 2] = sign_strength
+        out[:, 3] = ext_dist
 
 
 
@@ -82,12 +82,11 @@ class HMMRegime:
 
         # state labeling — identical to original
         # safe because column 0 is always r1 (fixed FEATURES order)
-        score = self.model.means_[:, 0] + 0.5 * self.model.means_[:, 1]
+        score = self.model.means_[:, 2] + 0.5 * self.model.means_[:, 3]
         order = np.argsort(score)
         self.state_map = {
-            int(order[0]): "bearish",
-            int(order[1]): "sideways",
-            int(order[2]): "bullish",
+            int(order[0]): "sideways",
+            int(order[1]): "trending",
         }
 
     def transform(self, df):
@@ -103,25 +102,21 @@ class HMMRegime:
         pad = N - len(states)
         states = np.pad(states, (pad, 0), constant_values=1)
         probs = np.pad(probs, ((pad, 0), (0, 0)),
-                       constant_values=1 / 3)
+                       constant_values=1 / 2)
 
         n = len(states)
-        bull = np.zeros(n)
-        bear = np.zeros(n)
+        trend = np.zeros(n)
         side = np.zeros(n)
 
-        for i in range(3):
+        for i in range(2):
             label = self.state_map[i]
-            if label == "bullish":
-                bull += probs[:, i]
-            elif label == "bearish":
-                bear += probs[:, i]
-            else:
+            if label == "trending":
+                trend += probs[:, i]
+            elif label == "sideways":
                 side += probs[:, i]
 
         return {
-            "bull_prob": bull,
-            "bear_prob": bear,
+            "trend_prob": trend,
             "side_prob": side,
             "states": states,
         }
@@ -134,17 +129,16 @@ class HMMRegime:
         X_raw = self._clean(self._features(df_window))
 
         if len(X_raw) < 10:
-            return {"bull_prob": 1 / 3, "bear_prob": 1 / 3, "side_prob": 1 / 3}
+            return {"trend_prob": 1 / 2, "side_prob": 1 / 2}
 
 
         probs = self.model.predict_proba(X_raw)  # (T, 3)
 
         last = probs[-1]  # last timestep probabilities
-        bull = sum(last[i] for i, n in self.state_map.items() if n == "bullish")
-        bear = sum(last[i] for i, n in self.state_map.items() if n == "bearish")
+        trending = sum(last[i] for i, n in self.state_map.items() if n == "trending")
         side = sum(last[i] for i, n in self.state_map.items() if n == "sideways")
 
-        return {"bull_prob": bull, "bear_prob": bear, "side_prob": side}
+        return {"trend_prob": trending, "side_prob": side}
 
     def save(self, path):
         joblib.dump(self, path)
@@ -369,7 +363,83 @@ class CNNModel(nn.Module):
         return self.classifier(x)  # (B,)
 
 
+class MoEEnsemble:
+    """2 LSTM + 2 CNN experts gated by HMM regime probabilities (trending/sideways)."""
 
+    REGIME_NAMES = ['trending', 'sideways']
+    N_EXPERTS    = 2
+
+    def __init__(self, input_size, hidden_size=24,
+                 num_filters=24, kernel_size=4,
+                 dropout=0.25, device='cpu'):
+        self.device      = device
+        self.input_size  = input_size
+        self.hidden_size = hidden_size
+        self.num_filters = num_filters
+
+        self.lstms = nn.ModuleList([
+            LSTMModel(input_size, hidden_size, dropout=dropout)
+            for _ in range(self.N_EXPERTS)
+        ]).to(device)
+
+        self.cnns = nn.ModuleList([
+            CNNModel(input_size, num_filters, kernel_size,
+                     dropout=dropout)
+            for _ in range(self.N_EXPERTS)
+        ]).to(device)
+
+    def forward_moe(self, xb, regime_probs):
+        """
+        xb:           (B, T, F)
+        regime_probs: (B, 2) — [p_trending, p_sideways]
+        returns:      (B, 1) — final P(up)
+        """
+        xb           = xb.to(self.device)
+        regime_probs = regime_probs.to(self.device)
+
+        # (B, 2) — one probability per expert
+        lstm_p = torch.stack([
+            torch.sigmoid(self.lstms[r](xb)).squeeze(-1)
+            for r in range(self.N_EXPERTS)
+        ], dim=1)
+
+        cnn_p = torch.stack([
+            torch.sigmoid(self.cnns[r](xb)).squeeze(-1)
+            for r in range(self.N_EXPERTS)
+        ], dim=1)
+
+        expert_p = (lstm_p + cnn_p) / 2.0                               # (B, 2)
+        final_p  = (expert_p * regime_probs).sum(dim=1, keepdim=True)   # (B, 1)
+        return final_p
+
+    def save(self, dataset_dir, seed=42):
+        d = Path(dataset_dir)
+        for r, name in enumerate(self.REGIME_NAMES):
+            torch.save(self.lstms[r].state_dict(),
+                       d / f"{seed}_lstm_{name}.pt")
+            torch.save(self.cnns[r].state_dict(),
+                       d / f"{seed}_cnn_{name}.pt")
+        json.dump({
+            "input_size":  self.input_size,
+            "hidden_size": self.hidden_size,
+            "num_filters": self.num_filters,
+        }, open(d / "moe_config.json", "w"))
+
+    @classmethod
+    def load(cls, dataset_dir, seed=42, device='cpu'):
+        cfg = json.load(open(Path(dataset_dir) / "moe_config.json"))
+        moe = cls(cfg["input_size"], cfg["hidden_size"],
+                  cfg["num_filters"], device=device)
+        for r, name in enumerate(cls.REGIME_NAMES):
+            moe.lstms[r].load_state_dict(torch.load(
+                Path(dataset_dir) / f"{seed}_lstm_{name}.pt",
+                map_location=device))
+            moe.cnns[r].load_state_dict(torch.load(
+                Path(dataset_dir) / f"{seed}_cnn_{name}.pt",
+                map_location=device))
+        for m in list(moe.lstms) + list(moe.cnns):
+            m.eval()
+        return moe
 
 # Test if code runs
 class FocalLoss(nn.Module):

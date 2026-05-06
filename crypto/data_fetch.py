@@ -217,6 +217,14 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     df_resampled['pct_change'] = df_resampled['pct_change'].fillna(0.0)
     is_ath = df_resampled['Close'] == df_resampled['local_ATH']
     is_atl = df_resampled['Close'] == df_resampled['local_ATL']
+    df_resampled['r1'] = df_resampled['Close'].pct_change(periods=1, fill_method=None)
+    df_resampled['r8'] = df_resampled['Close'].pct_change(periods=8, fill_method=None)
+    df_resampled['candle_pos'] = (df_resampled['Close'] - df_resampled['Low'])/(df_resampled['High']-df_resampled['Low']+ 1e-8)
+    df_resampled['candle_pos'] = df_resampled['candle_pos'].clip(0.0, 1.0)
+    trades_mean = df_resampled['Number of Trades'].rolling(window=224,min_periods=1).mean()
+    trades_std = df_resampled['Number of Trades'].rolling(window=224,min_periods=1).std()
+    df_resampled['trades_z'] = (df_resampled['Number of Trades'] - trades_mean)/(trades_std+1e-10)
+    df_resampled['trades_z'] = df_resampled['trades_z'].clip(-5,5)
 
     # Time since local high
     not_ath = ~is_ath
@@ -263,10 +271,11 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     df_resampled['bb_upper'] = bb_ma + (bb_std * 2)
     df_resampled['bb_lower'] = bb_ma - (bb_std * 2)
     df_resampled['distance_hl_position'] = (df_resampled['Close'] - df_resampled['local_ATL'])/(df_resampled['local_ATH']-df_resampled['local_ATL']+ 1e-8)
+    df_resampled['distance_hl_position'] = df_resampled['distance_hl_position'].clip(0.0,1.0)
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','trend_slope_short','pct_change','adj_close','RSI','distance_to_high','distance_to_low','Number of Trades','hour','funding_rate','time_local_Low','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','trend_slope_short','Close','High','Low','trades_z','pct_change','adj_close','RSI','distance_to_high','distance_to_low','Number of Trades','hour','funding_rate','time_local_Low','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()
@@ -466,7 +475,7 @@ def build_windows(
     num_features = feature_array.shape[1]
     
     # Extract Close prices for targets (assuming 'Close' is in the features)
-    close_idx = df_features.columns.get_loc('Close')
+    close_idx = df_features.columns.get_loc('r8')
     close_prices = feature_array[:, close_idx]
     
     # Calculate number of windows

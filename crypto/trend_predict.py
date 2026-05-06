@@ -4,6 +4,8 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+import torch
+
 from .model import HMMRegime
 import matplotlib.pyplot as plt
 def regime_separation_score(df, hmm):
@@ -50,8 +52,7 @@ def regime_confidence(df, hmm):
     out = hmm.transform(df)
 
     probs = np.stack([
-        out["bull_prob"],
-        out["bear_prob"],
+        out["trend_prob"],
         out["side_prob"]
     ], axis=1)
 
@@ -64,6 +65,27 @@ def full_regime_diagnostics(df, hmm):
     regime_distribution(df, hmm)
     regime_confidence(df, hmm)
     regime_separation_score(df,hmm)
+def _get_regime_probs_batch(xb, scaler, feature_names, hmm):
+    """
+    Compute HMM regime probs for each sample in batch.
+    Returns (B, 2) FloatTensor [p_trending, p_sideways].
+    Identical code path to MOE_eval_live — no train/inference gap.
+    """
+    xb_np   = xb.cpu().numpy()
+    B, T, F = xb_np.shape
+    probs   = np.full((B, 2), 0.5, dtype=np.float32)
+
+    for i in range(B):
+        window_raw = scaler.inverse_transform(xb_np[i])
+        df_win     = pd.DataFrame(window_raw, columns=feature_names)
+        try:
+            reg         = hmm.transform(df_win)
+            probs[i, 0] = float(reg['trend_prob'][-1])
+            probs[i, 1] = float(reg['side_prob'][-1])
+        except Exception:
+            pass   # keep uniform 0.5
+
+    return torch.FloatTensor(probs)
 def get_hmm_signal_from_batch(xb, scaler, hmm, feature_names, hmm_weight=0.2):
     xb_np = xb.cpu().numpy()   # (B, T, F)
     B, T, F = xb_np.shape
@@ -88,21 +110,17 @@ def get_hmm_signal_from_batch(xb, scaler, hmm, feature_names, hmm_weight=0.2):
         try:
             regimes = hmm.transform(df_win)
 
-            bull = regimes["bull_prob"][-1]
-            bear = regimes["bear_prob"][-1]
+            trend = regimes["trend_prob"][-1]
             side = regimes["side_prob"][-1]
 
-            signals[i] = (
-                hmm_weight *
-                (1 - side) *
-                (bull - bear)
-            )
+
 
         except Exception:
             # 🚨 fallback if HMM breaks
-            signals[i] = 0.0
+            trend = 0.5
+            side = 0.5
 
-    return signals
+    return trend,side
 def plot_hmm_states(df, hmm, title="HMM Regimes"):
     regimes = hmm.transform(df)
     states = regimes["states"]
@@ -156,7 +174,7 @@ def evaluate_hmm(hmm, df, name):
     # =============================
 
     regimes = hmm.transform(df)
-    signal = regimes["bull_prob"] - regimes["bear_prob"]
+    signal = regimes["trend_prob"] - regimes["side_prob"]
 
     close = df["Close"].values
 
@@ -219,6 +237,7 @@ def test_hmm(dataset_dir):
     print("\n📊 FINAL MODEL:")
     loglik, persistence = evaluate_hmm(hmm, df_val, "FINAL")
     evaluate_full(hmm,df_train, df_val)
+    plot_hmm_states(df_val,hmm,"test")
     plot_hmm_states(df_val,hmm,"train")
     # =============================
     # SAVE

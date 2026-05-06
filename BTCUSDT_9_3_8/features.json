@@ -1,9 +1,9 @@
 [
-  "High",
-  "Low",
-  "Close",
   "volume_zscore",
   "funding_z",
+  "r1",
+  "r8",
+  "candle_pos",
   "taker_buy_ratio",
   "distance_hl_position",
   "bb_width"

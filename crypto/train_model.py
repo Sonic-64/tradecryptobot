@@ -6,7 +6,7 @@ import torch.nn as nn
 from sklearn.preprocessing import StandardScaler
 import joblib
 from torch.nn import BCEWithLogitsLoss
-from torch.utils.data import  DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from itertools import product, combinations
 import numpy as np
 import json
@@ -15,9 +15,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from .dataset import NumpyDataset
 from . import analyze_days
-from .trend_predict import get_hmm_signal_from_batch,evaluate_hmm,evaluate_full,train_hmm,test_hmm,plot_hmm_states
+from .trend_predict import get_hmm_signal_from_batch, evaluate_hmm, evaluate_full, train_hmm, test_hmm, plot_hmm_states, \
+    _get_regime_probs_batch
 from .tune import  save_eval_results, insert_eval_results, load_eval_results,get_best_config
-from .model import LSTMModel, CNNModel, WeightedBCELoss, HMMRegime,WeightedBrierLoss
+from .model import LSTMModel, CNNModel, WeightedBCELoss, HMMRegime, WeightedBrierLoss, MoEEnsemble
 from .data_fetch import (
     make_dataset,
     get_evaluate_window,
@@ -137,6 +138,7 @@ def grid_search(model_type,dataset_dir):
     for hidden_size, num_layers,dropout in product(hidden,layers,drop):
         acc,gap = train_with_params(dataset_dir, hidden_size, num_layers, dropout, model_type)
         if acc > best_acc:
+            best_acc = acc
             best_config = {
                 "hidden_size": hidden_size,
                 "num_layers": num_layers,
@@ -229,7 +231,13 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
         scale=60.0, min_w=0.20, max_w=3.0
     )
     # Increased gamma
-    train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True)
+    train_weights = np.linspace(0.80, 1.0, len(train_ds))
+    sampler = WeightedRandomSampler(
+        weights=torch.FloatTensor(train_weights),
+        num_samples=len(train_ds),
+        replacement=True
+    )
+    train_loader = DataLoader(train_ds, batch_size=BATCH, sampler=sampler)
     test_loader = DataLoader(test_ds, batch_size=BATCH)
     val_loader = DataLoader(val_ds, batch_size=BATCH)
     # Get input size from the first item in dataset
@@ -309,21 +317,11 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
 # # --- Main function to run the training and evaluation to call from main.py ---
 
 
-def conf_eval_MOE(config,loader,prob_threshold=0.50):
-    scaler = config["scaler"]
-    features = config["features"]
-    model = config["moe"]
-    weighted_correct = 0.0
-    weighted_total = 0.0
-    all_predictions = []
-    with torch.no_grad():
-        for xb, y_class, y_change in loader:
-            xb = xb.to("cpu")
-    return
-def MOE_eval_live(config,xb,prob_threshold=0.50):
-    return
-def train_MOE(database_dir):
-    return
+
+# ── Evaluate MoE ──────────────────────────────────────────────────────────────
+
+
+
 def conf_eval(config,loader,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50,label=""):
     accuracy_confidence = 0.5
     weighted_correct = 0.0
@@ -546,17 +544,24 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         scale=60.0, min_w=0.20, max_w=3.0
     )
     # Increased gamma
-    train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True)
+    train_weights = np.linspace(0.80, 1.0, len(train_ds))
+    sampler = WeightedRandomSampler(
+        weights=torch.FloatTensor(train_weights),
+        num_samples=len(train_ds),
+        replacement=True
+    )
+    train_loader = DataLoader(train_ds, batch_size=BATCH, sampler=sampler)
     test_loader = DataLoader(test_ds, batch_size=BATCH)
     val_loader = DataLoader(val_ds,batch_size=BATCH)
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
     HIDDEN_SIZE = 32
-    NUM_LAYERS = 3
+    NUM_FILTERS = 8
+    NUM_LAYERS = 2
     KERNEL_SIZE = 4
-    DROPOUT = 0.3
-    DROPOUT_LSTM = 0.3
+    DROPOUT = 0.4
+    DROPOUT_LSTM = 0.4
     print(f"using HIDDEN SIZE:{HIDDEN_SIZE} NUM LAYERS:{NUM_LAYERS} KERNEL_SIZE:{KERNEL_SIZE} DROPOUT:{DROPOUT}")
     # Slightly larger model for better capacity
     model = LSTMModel(
@@ -623,13 +628,13 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     cnn_model = CNNModel(
         input_size=input_size,
-        num_filters=HIDDEN_SIZE,
+        num_filters=NUM_FILTERS,
         kernel_size=KERNEL_SIZE,
         dropout=DROPOUT,
     ).to(device)
     cnn_model_config = {
         "input_size": input_size,
-        "num_filters": HIDDEN_SIZE,  # Increased
+        "num_filters": NUM_FILTERS,  # Increased
         "kernel_size": KERNEL_SIZE,  # Increased
         "dropout": DROPOUT,  # Increased
     }
@@ -817,12 +822,19 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     train_ds.X = X_train
     test_ds.X = X_test
     class_criterion = BCEWithLogitsLoss()  # Increased gamma
-    train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True)
+    train_weights = np.linspace(0.80, 1.0, len(train_ds))
+    sampler = WeightedRandomSampler(
+        weights=torch.FloatTensor(train_weights),
+        num_samples=len(train_ds),
+        replacement=True
+    )
+    train_loader = DataLoader(train_ds, batch_size=BATCH, sampler=sampler)
     test_loader = DataLoader(test_ds, batch_size=BATCH)
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]
     HIDDEN_SIZE = 16
+    NUM_FILTERS = 8
     NUM_LAYERS = 2
     KERNEL_SIZE = 4
     DROPOUT = 0.3
@@ -890,13 +902,13 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     cnn_model = CNNModel(
         input_size=input_size,
-        num_filters=HIDDEN_SIZE,
+        num_filters=NUM_FILTERS,
         kernel_size=KERNEL_SIZE,
         dropout=DROPOUT,
     ).to(device)
     cnn_model_config = {
         "input_size": input_size,
-        "num_filters": HIDDEN_SIZE,  # Increased
+        "num_filters": NUM_FILTERS,  # Increased
         "kernel_size": KERNEL_SIZE,  # Increased
         "dropout": DROPOUT,  # Increased
     }
@@ -1116,11 +1128,12 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
 
 
             # Open trade if none open
-            if i - last_trade_candle[symbol]>= cooldown_candles:
+            if i - last_trade_candle[symbol]> cooldown_candles:
 
                 acc = c.get("accuracy")
                 if not acc:
                     continue
+
                 acc = acc[0] if isinstance(acc, list) else acc
                 if acc < 0.6:
                     acc = 0.0
