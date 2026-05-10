@@ -261,9 +261,13 @@ class LSTMModel(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.out = nn.Linear(128, 1)
 
-    def forward(self, x):
+    def forward(self, x,training=False):
         lstm_out, _ = self.lstm(x)
-
+        if training:
+            mask = torch.bernoulli(
+                torch.full((x.size(0), x.size(1), 1), 0.85, device=x.device)
+            )
+            x = x * mask
         attn_scores = self.attn(lstm_out)
         attn_weights = torch.softmax(
             attn_scores / (lstm_out.size(-1) ** 0.5), dim=1
@@ -334,13 +338,13 @@ class CNNModel(nn.Module):
         )
         self.classifier = nn.Linear(num_filters // 2, 1)
 
-    def forward(self, x):
+    def forward(self, x,training=False):
         # x: (B, T, F)
 
         # Optionally slice to most recent N steps
         # e.g. cnn_window_steps=28 → last 3.5 days of 3h candles
 
-        x = x[:, -32:, :]   # (B, N, F)
+        x = x[:, -24:, :]   # (B, N, F)
 
         # Project features: (B, T, F) → (B, T, C)
         x = self.input_proj(x)

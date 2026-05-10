@@ -1,0 +1,13 @@
+[
+  "High",
+  "Low",
+  "Close",
+  "volume_zscore",
+  "funding_z",
+  "r1",
+  "candle_pos",
+  "trades_z",
+  "taker_buy_ratio",
+  "distance_hl_position",
+  "bb_width"
+]

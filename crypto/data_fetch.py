@@ -173,7 +173,7 @@ def rolling_slope(series, window=20):
             slopes.append(coef[0] / series.iloc[i])  # normalize by price
     return pd.Series(slopes, index=series.index)
 
-def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFrame, List[str]]:
+def compute_features(df: pd.DataFrame, resample_hours: int,offset_hours=0) -> Tuple[pd.DataFrame, List[str]]:
     """
     Resample data and compute technical indicators once on the full dataset.
     
@@ -185,7 +185,10 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
         Tuple of (feature DataFrame, feature column names)
     """
     # Resample to specified interval
-    df_resampled = df.resample(f'{resample_hours}h').agg({
+    resample_kwargs = {}
+    if offset_hours:
+        resample_kwargs["offset"] = f"{offset_hours}h"
+    df_resampled = df.resample(f'{resample_hours}h', **resample_kwargs).agg({
         'Open': 'first',
         'High': 'max',
         'Low': 'min',
@@ -211,13 +214,18 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     funding_std = df_resampled['funding_rate'].rolling(window=224,min_periods=1).std()
     df_resampled['funding_z'] = (df_resampled['funding_rate']-funding_mean)/(funding_std+1e-10)
     df_resampled['funding_z'] = df_resampled['funding_z'].clip(-5,5)
-    df_resampled['local_ATH'] = df_resampled['High'].rolling(window=224, min_periods=1).max()
-    df_resampled['local_ATL'] = df_resampled['Low'].rolling(window=224, min_periods=1).min()
+    df_resampled['vwap'] = (
+            df_resampled['Quote Asset Volume'] /
+            (df_resampled['Volume'] + 1e-8)
+    )
+    df_resampled['local_ATH'] = df_resampled['vwap'].rolling(window=224, min_periods=1).max()
+    df_resampled['local_ATL'] = df_resampled['vwap'].rolling(window=224, min_periods=1).min()
     df_resampled['pct_change'] = df_resampled['Close'].pct_change(periods=8,fill_method=None)
+    df_resampled['funding_change'] = df_resampled['funding_rate'].pct_change(periods=8,fill_method=None)
     df_resampled['pct_change'] = df_resampled['pct_change'].fillna(0.0)
     is_ath = df_resampled['Close'] == df_resampled['local_ATH']
     is_atl = df_resampled['Close'] == df_resampled['local_ATL']
-    df_resampled['r1'] = df_resampled['Close'].pct_change(periods=1, fill_method=None)
+    df_resampled['r1'] = df_resampled['vwap'].pct_change(periods=1, fill_method=None)
     df_resampled['r8'] = df_resampled['Close'].pct_change(periods=8, fill_method=None)
     df_resampled['candle_pos'] = (df_resampled['Close'] - df_resampled['Low'])/(df_resampled['High']-df_resampled['Low']+ 1e-8)
     df_resampled['candle_pos'] = df_resampled['candle_pos'].clip(0.0, 1.0)
@@ -241,13 +249,12 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
 
     # 2. VOLATILITY RATIO (short-term vs long-term volatility)
     # Short-term volatility (6 periods = ~1.5 days for 6h candles)
-    df_resampled['adj_close'] = (df_resampled['Close'] + df_resampled['High'] + df_resampled['Low'])/3
-    df_resampled['trend_slope_short'] = rolling_slope(df_resampled['adj_close'], window=112)
+    df_resampled['trend_slope_short'] = rolling_slope(df_resampled['vwap'], window=112)
     # 3. VOLUME-PRICE CORRELATION (smart money detection)
     # 20-period rolling correlation between volume and price
     delta = df_resampled['Close'].diff()
-    gain = delta.where(delta > 0, 0).rolling(window=56, min_periods=1).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=56, min_periods=1).mean()
+    gain = delta.where(delta > 0, 0).rolling(window=112, min_periods=1).mean()
+    loss = -delta.where(delta < 0, 0).rolling(window=112, min_periods=1).mean()
     # Avoid divide by zero
     rs = gain / loss.replace(0, np.nan)
     rs = rs.fillna(0)
@@ -266,16 +273,16 @@ def compute_features(df: pd.DataFrame, resample_hours: int) -> Tuple[pd.DataFram
     # RSI with safe division
     # Volatility
     df_resampled['hour'] =  df_resampled.index.hour
-    bb_ma = df_resampled['adj_close'].rolling(40).mean()
-    bb_std = df_resampled['adj_close'].rolling(40).std()
+    bb_ma = df_resampled['Close'].rolling(20).mean()
+    bb_std = df_resampled['Close'].rolling(20).std()
     df_resampled['bb_upper'] = bb_ma + (bb_std * 2)
     df_resampled['bb_lower'] = bb_ma - (bb_std * 2)
-    df_resampled['distance_hl_position'] = (df_resampled['Close'] - df_resampled['local_ATL'])/(df_resampled['local_ATH']-df_resampled['local_ATL']+ 1e-8)
+    df_resampled['distance_hl_position'] = (df_resampled['vwap'] - df_resampled['local_ATL'])/(df_resampled['local_ATH']-df_resampled['local_ATL']+ 1e-8)
     df_resampled['distance_hl_position'] = df_resampled['distance_hl_position'].clip(0.0,1.0)
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','trend_slope_short','Close','High','Low','trades_z','pct_change','adj_close','RSI','distance_to_high','distance_to_low','Number of Trades','hour','funding_rate','time_local_Low','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','trend_slope_short','funding_change','RSI','r8','vwap','pct_change','distance_to_high','distance_to_low','Number of Trades','hour','funding_rate','time_local_Low','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()
@@ -453,59 +460,67 @@ def analyze_days(symbol: str, lookback_days: int):
     all_adv = pd.concat([long_adv, short_adv])
     all_change = pd.concat([long_df["pct_move"], short_df["pct_move"]])
     return (round(all_change.mean(),4)/100), (round(all_change.median(),4)/100), (round(all_adv.mean(),4)/100), (round(all_adv.median(),4)/100)
+
+
 def build_windows(
-    df_features: pd.DataFrame,
-    window_days: int,
-    resample_hours: int,
-    horizon: int,
-    step: int
-) -> Tuple[np.ndarray, np.ndarray]:
+        df_features: pd.DataFrame,
+        window_days: int,
+        resample_hours: int,
+        horizon: int,
+        step: int
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Returns (X, y, timestamps) where timestamps are the candle-index datetimes
+    of each window's first candle, used by make_dataset to sort across phases."""
 
     steps_per_day = 24 / resample_hours
     window_size = int(window_days * steps_per_day)
-    
+
     if window_size < 1:
-        raise ValueError(f"Window size too small: {window_size} steps. Increase window_days or decrease resample_hours.")
-    
+        raise ValueError(
+            f"Window size too small: {window_size} steps. Increase window_days or decrease resample_hours.")
+
     if len(df_features) < window_size + horizon:
         raise ValueError(f"Not enough data: {len(df_features)} samples, need at least {window_size + horizon}")
-    
+
     # Convert to numpy array
     feature_array = df_features.values.astype(np.float32)
     num_features = feature_array.shape[1]
-    
+
     # Extract Close prices for targets (assuming 'Close' is in the features)
-    close_idx = df_features.columns.get_loc('r8')
+    close_idx = df_features.columns.get_loc('Close')
     close_prices = feature_array[:, close_idx]
-    
+
     # Calculate number of windows
     max_start = len(feature_array) - window_size - horizon + 1
     if max_start <= 0:
         raise ValueError(f"Not enough data: {len(feature_array)} samples, need at least {window_size + horizon}")
-    
+
     # Generate all valid start indices with step
     start_indices = np.arange(0, max_start, step)
-    
+
     if len(start_indices) == 0:
         raise ValueError(f"No valid windows can be created with the given parameters.")
-    
+
     # Vectorized window creation using advanced indexing
     # Create index array for all windows: shape (num_windows, window_size)
     window_indices = start_indices[:, None] + np.arange(window_size)
-    
+
     # Extract windows: shape (num_windows, window_size, num_features)
     X = feature_array[window_indices].astype(np.float32)
-    
+
     # Targets: Close price horizon steps ahead
     target_indices = start_indices + window_size + horizon - 1
     # Ensure we don't go out of bounds
     valid_mask = target_indices < len(close_prices)
     X = X[valid_mask]
     target_indices = target_indices[valid_mask]
-    
+
     y = close_prices[target_indices].astype(np.float32)
-    
-    return X, y
+
+    # Timestamps of each window's first candle — used for cross-phase chronological sorting
+    timestamps = np.array(df_features.index[start_indices[valid_mask]], dtype="datetime64[ns]")
+
+    return X, y, timestamps
 
 def get_evaluate_window(symbol:str,window_days:int,resample_hours:int):
     steps_per_day = 24 // resample_hours
@@ -516,11 +531,14 @@ def get_evaluate_window(symbol:str,window_days:int,resample_hours:int):
 
     X = window_df.values.astype(np.float32)
     return X
-def scale_live_window(X, scaler):
+def scale_live_window(X, scaler,feature_names):
     """
     X: np.ndarray (T, F)
     returns: torch.Tensor (1, T, F)
     """
+    MODEL_EXCLUDE = {'Close', 'High', 'Low'}
+    model_idx = [i for i, n in enumerate(feature_names) if n not in MODEL_EXCLUDE]
+    X = X[:, model_idx]
     T, F = X.shape
 
     # flatten time
@@ -539,44 +557,91 @@ def make_dataset(
     window_days: int,
     resample_hours: int,
     horizon: int,
-    step: int,
-    cutoff:int,
+    step_hours: int,
+    cutoff: int,
 ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
     Orchestrate dataset creation: download, compute features, build windows, and save.
-    
+
+    step_hours controls how many hours separate consecutive window starts, independently
+    of resample_hours.
+
+    - step_hours >= resample_hours : single-phase, windows advance by
+      step_hours // resample_hours candles (original behaviour when step_hours == resample_hours).
+    - step_hours < resample_hours  : multi-phase; resample_hours must be divisible by
+      step_hours.  The raw 1 h data is resampled n_phases = resample_hours // step_hours
+      times with increasing hour offsets, giving n_phases times more windows while keeping
+      the same candle resolution.  All windows are merged and sorted chronologically so
+      that the downstream train/val/test time-split remains valid.
+
     Returns:
         Tuple of (X, y, feature_names)
     """
+    if step_hours <= 0:
+        raise ValueError(f"step_hours must be a positive integer, got {step_hours}")
+
     outdir_path = Path(f"{symbol}_{window_days}_{resample_hours}_{horizon}")
     outdir_path.mkdir(parents=True, exist_ok=True)
-    df_raw = download_data(symbol, months,cutoff=cutoff)
 
+    df_raw = download_data(symbol, months, cutoff=cutoff)
     df_raw = df_raw[df_raw.index >= df_raw.index[0].ceil('D')]
 
-    df_features, feature_names = compute_features(df_raw, resample_hours)
+    if step_hours >= resample_hours:
+        # ── Simple case: single resample phase ───────────────────────────────
+        step_candles = step_hours // resample_hours
+        df_features, feature_names = compute_features(df_raw, resample_hours)
+        X, y, _ = build_windows(df_features, window_days, resample_hours, horizon, step_candles)
 
+    else:
+        # ── Multi-phase case ─────────────────────────────────────────────────
+        if resample_hours % step_hours != 0:
+            raise ValueError(
+                f"step_hours ({step_hours}) must divide resample_hours ({resample_hours}) "
+                f"evenly when step_hours < resample_hours.  "
+                f"Valid step_hours values: {[resample_hours // k for k in range(2, resample_hours + 1) if resample_hours % k == 0]}"
+            )
+        n_phases = resample_hours // step_hours
+        print(f"[make_dataset] step_hours={step_hours} < resample_hours={resample_hours}: "
+              f"building {n_phases} phase-shifted datasets (offsets: "
+              f"{[p * step_hours for p in range(n_phases)]}h)")
+
+        all_X:  list[np.ndarray] = []
+        all_y:  list[np.ndarray] = []
+        all_ts: list[np.ndarray] = []
+
+        for phase in range(n_phases):
+            offset = phase * step_hours
+            df_features, feature_names = compute_features(df_raw, resample_hours, offset_hours=offset)
+            X_p, y_p, ts_p = build_windows(df_features, window_days, resample_hours, horizon, step=1)
+            all_X.append(X_p)
+            all_y.append(y_p)
+            all_ts.append(ts_p)
+            print(f"  phase {phase} (offset={offset}h): {len(X_p)} windows")
+
+        X = np.concatenate(all_X, axis=0)
+        y = np.concatenate(all_y, axis=0)
+        timestamps = np.concatenate(all_ts, axis=0)
+
+        # Sort chronologically so that the train/val/test index-based split in
+        # Train_val() still corresponds to oldest→newest.
+        sort_idx = np.argsort(timestamps)
+        X = X[sort_idx]
+        y = y[sort_idx]
+        print(f"  total windows after merge + sort: {len(X)}")
+
+    # ── Persist ───────────────────────────────────────────────────────────────
     df_features.to_csv(f"{outdir_path}/df.csv")
 
-    X, y = build_windows(df_features, window_days, resample_hours, horizon, step)
-
-
-    # Create output directory
-
-
-    # Save arrays
-    x_path = outdir_path / "X.npy"
-    y_path = outdir_path / "y.npy"
+    x_path       = outdir_path / "X.npy"
+    y_path       = outdir_path / "y.npy"
     features_path = outdir_path / "features.json"
 
     np.save(x_path, X)
     np.save(y_path, y)
-    
-    # Save feature names as JSON
+
     with open(features_path, 'w') as f:
         json.dump(feature_names, f, indent=2)
 
-    
     return X, y, feature_names
 
 

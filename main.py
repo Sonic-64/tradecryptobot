@@ -19,12 +19,12 @@ if __name__ == "__main__":
     parser.add_argument("--train", action="store_true", help="Training mode")
     parser.add_argument("--predict", action="store_true", help="Prediction mode")
     parser.add_argument("--window_days", type=int, default=9, help="Number of past days in each training window")
-    parser.add_argument("--horizon", type=int, default=8, help="Number of resampled steps ahead to predict")
-    parser.add_argument("--resample_hours", type=int, default=3, help="Resampling interval in hours")
+    parser.add_argument("--horizon", type=int, default=6, help="Number of resampled steps ahead to predict")
+    parser.add_argument("--resample_hours", type=int, default=4, help="Resampling interval in hours")
     parser.add_argument("--months", type=int, default=24, help="Number of past months to fetch (-1 for full history)")
-    parser.add_argument("--step", type=int, default=1, help="Stride between sliding windows")
+    parser.add_argument("--step_hours", type=int, default=1, help="Stride between sliding windows")
     parser.add_argument("--evaluate_hmm",action="store_true",help="evaluate HMM configs")
-    parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, default=120, help="Number of training epochs")
     parser.add_argument("--get_best_config",action="store_true",help="find best eval config based on multiple periods")
     parser.add_argument("--backtest",action="store_true",help="backtesting")
     parser.add_argument("--cutoff",type=int,default=0,help="how many days ago  should there be data fetch cutoff")
@@ -45,7 +45,7 @@ if __name__ == "__main__":
                 window_days=args.window_days,
                 resample_hours=args.resample_hours,
                 horizon=args.horizon,
-                step=args.step,
+                step_hours=args.step_hours,
                 cutoff=args.cutoff
             )
             time.sleep(1)
@@ -60,14 +60,15 @@ if __name__ == "__main__":
                 window_days=args.window_days,
                 resample_hours=args.resample_hours,
                 horizon=args.horizon,
-                step=args.step,
+                step_hours=args.step_hours,
                 cutoff=args.cutoff
             )
             time.sleep(1)
-        for symbol in symbols:
-            crypto.grid_search("CNN",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
+
         for symbol in symbols:
             crypto.grid_search("LSTM",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
+        for symbol in symbols:
+            crypto.grid_search("CNN",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
     if args.predict:
         crypto.eval_live(months=args.months,window_days=args.window_days,resample_hours=args.resample_hours,horizon=args.horizon)
     if args.data_fetch:
@@ -78,7 +79,7 @@ if __name__ == "__main__":
                 window_days=args.window_days,
                 resample_hours=args.resample_hours,
                 horizon=args.horizon,
-                step=args.step,
+                step_hours=args.step_hours,
                 cutoff=args.cutoff
             )
         else:
@@ -90,7 +91,7 @@ if __name__ == "__main__":
                     window_days=args.window_days,
                     resample_hours=args.resample_hours,
                     horizon=args.horizon,
-                    step=args.step,
+                    step_hours=args.step_hours,
                     cutoff=args.cutoff
                 )
                 time.sleep(1)
@@ -127,7 +128,7 @@ if __name__ == "__main__":
                     window_days=args.window_days,
                     resample_hours=args.resample_hours,
                     horizon=args.horizon,
-                    step=args.step,
+                    step_hours=args.step_hours,
                     cutoff=i
                 )
                 time.sleep(1)
@@ -145,7 +146,7 @@ if __name__ == "__main__":
         while i < 180:
             drawdown, roi = crypto.paper_trade_historical(months=args.months, window_days=args.window_days,
                                                           resample_hours=args.resample_hours,
-                                                          horizon=args.horizon, cutoff=i)
+                                                          horizon=args.horizon,step_hours=args.step_hours, cutoff=i)
             drawdowns.append(drawdown)
             rois.append(roi)
             i += 30

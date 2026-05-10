@@ -1,9 +1,13 @@
 import math
 import time
-
+import optuna
+optuna.logging.set_verbosity(optuna.logging.WARNING)
 import torch
 import torch.nn as nn
+from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 import joblib
 from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import DataLoader, WeightedRandomSampler
@@ -42,7 +46,7 @@ def train(model, loader, criterion, optimizer,
             y_change.to(device),
         )
         optimizer.zero_grad()
-        logits = model(xb)
+        logits = model(xb,training=True)
 
         if weighted:
             loss = criterion(logits, y_class,y_change)
@@ -131,7 +135,7 @@ def evaluate_weighted(model, loader, device,
 def grid_search(model_type,dataset_dir):
     print(f"performing grid search on model: {model_type} and dataset_dir : {dataset_dir}")
     drop = [0.3,0.4,0.5]
-    hidden = [8,16,32]
+    hidden = [16,32,64]
     layers = [2,3,4]
     best_acc = 0
     best_config = None
@@ -147,9 +151,26 @@ def grid_search(model_type,dataset_dir):
     print("final_best_config")
     print(best_config)
 
+def create_sample_weights(
+    future_returns,
+    scale=60.0,
+    min_w=0.15,
+    max_w=3.0,
+):
+    """
+    Larger future moves matter more.
+    """
+
+    weights = np.clip(
+        np.abs(future_returns) * scale,
+        min_w,
+        max_w,
+    )
 
 
-def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN",SEED = 42, EPOCHS = 100, BATCH = 32, LR = 1e-3):
+    return weights
+
+def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN",SEED = 42, EPOCHS = 120, BATCH = 256, LR = 1e-4):
 
     random.seed(SEED)
     np.random.seed(SEED)
@@ -183,11 +204,14 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
     N_raw = len(X_raw)
 
     # Define boundaries on the FULL unfiltered data
-    train_end = int(0.750 * N_raw)
+    train_start = int(0.10 * N_raw)
+    train_end = int(0.80 * N_raw)
+    test_start = 0
     test_end = int(0.900 * N_raw)
     val_end = int(N_raw)
-    save_split(X_raw[0:train_end], y_raw[0:train_end], dataset_dir, "train")
-    save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
+    save_split(X_raw[train_start:train_end], y_raw[train_start:train_end], dataset_dir, "train")
+    save_split(np.concatenate([X_raw[test_start:train_start], X_raw[train_end:test_end]]),
+               np.concatenate([y_raw[test_start:train_start], y_raw[train_end:test_end]]), dataset_dir, "test")
     save_split(X_raw[test_end:val_end], y_raw[test_end:val_end], dataset_dir, "val")
 
     train_ds = NumpyDataset(f"{outdir_path}/train_X.npy", f"{outdir_path}/train_y.npy", features_path,
@@ -228,10 +252,10 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
     val_ds.X = X_val
 
     class_criterion = WeightedBCELoss(
-        scale=60.0, min_w=0.20, max_w=3.0
+        scale=60.0, min_w=0.15, max_w=3.0
     )
     # Increased gamma
-    train_weights = np.linspace(0.80, 1.0, len(train_ds))
+    train_weights = np.linspace(1.0, 1.0, len(train_ds))
     sampler = WeightedRandomSampler(
         weights=torch.FloatTensor(train_weights),
         num_samples=len(train_ds),
@@ -251,7 +275,7 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
 
         ).to(device)
         optimizer = torch.optim.Adam(
-            model.parameters(), lr=LR, weight_decay=1e-3
+            model.parameters(), lr=LR, weight_decay=1e-2
         )
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.9)
     if model_type == "CNN":
@@ -261,7 +285,7 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
             kernel_size=num_layers,
             dropout=dropout,
         ).to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-3)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-2)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
      # Add weight decay
 
@@ -274,6 +298,7 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
     best_brier = 1
     patience = 40
     patience_counter = 0
+    best_score = 0
     for epoch in range(1, EPOCHS + 1):
         # Emphasize classification more heavily (alpha=2.0 vs beta=0.5)
         train_loss = train(
@@ -286,10 +311,10 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
         test_acc, brier = evaluate_weighted(
             model, test_loader, device
         )
-
+        train_acc , _ = evaluate_weighted(model,train_loader,device)
         # Step the scheduler
         scheduler.step()
-
+        score = test_acc -1.0 * abs(train_acc-test_acc)
         # Early stopping based on accuracy
         if test_acc > best_acc:
             best_brier = brier
@@ -313,7 +338,7 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
         f"  weighted  train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
     # Load best model for final save
 
-    return weighted_test,(abs(weighted_train-weighted_test))
+    return best_score,(abs(weighted_train-weighted_test))
 # # --- Main function to run the training and evaluation to call from main.py ---
 
 
@@ -454,8 +479,15 @@ def save_split(X, y, directory, name):
     np.save(f"{directory}/{name}_X.npy", X)
     np.save(f"{directory}/{name}_y.npy", y)
     # Podział na train/test
-
-def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
+def pool_and_flatten(X_tensor):
+        # X_tensor: (N, T, F) torch → numpy pooled+flat
+    POOL_GROUPS = 27
+    arr = X_tensor.numpy()  # (N, T, F)
+    N, T, F = arr.shape
+    assert T % POOL_GROUPS == 0, f"T={T} not divisible by POOL_GROUPS={POOL_GROUPS}"
+    arr = arr.reshape(N, POOL_GROUPS, T // POOL_GROUPS, F).mean(axis=2)  # (N, G, F)
+    return arr.reshape(N, -1)  # (N, G*F)
+def Train_val(dataset_dir,SEED = 42, EPOCHS=120, BATCH=256, LR=1e-4):
     random.seed(SEED)
     np.random.seed(SEED)
     torch.manual_seed(SEED)
@@ -493,11 +525,14 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     N_raw = len(X_raw)
 
     # Define boundaries on the FULL unfiltered data
-    train_end = int(0.750 * N_raw)
+
+    train_start=int(0.10 * N_raw)
+    train_end = int(0.80 * N_raw)
+    test_start = 0
     test_end = int(0.900 * N_raw)
     val_end = int(N_raw)
-    save_split(X_raw[0:train_end], y_raw[0:train_end], dataset_dir, "train")
-    save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
+    save_split(X_raw[train_start:train_end], y_raw[train_start:train_end], dataset_dir, "train")
+    save_split(np.concatenate([X_raw[test_start:train_start], X_raw[train_end:test_end]]), np.concatenate([y_raw[test_start:train_start], y_raw[train_end:test_end]]), dataset_dir, "test")
     save_split(X_raw[test_end:val_end], y_raw[test_end:val_end], dataset_dir, "val")
 
     train_ds = NumpyDataset(f"{outdir_path}/train_X.npy",f"{outdir_path}/train_y.npy",features_path,filter_noise=False)
@@ -541,34 +576,28 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     val_ds.X = X_val
 
     class_criterion = WeightedBCELoss(
-        scale=60.0, min_w=0.20, max_w=3.0
+        scale=60.0, min_w=0.15, max_w=3.0
     )
     # Increased gamma
-    train_weights = np.linspace(0.80, 1.0, len(train_ds))
-    sampler = WeightedRandomSampler(
-        weights=torch.FloatTensor(train_weights),
-        num_samples=len(train_ds),
-        replacement=True
-    )
-    train_loader = DataLoader(train_ds, batch_size=BATCH, sampler=sampler)
+    train_loader = DataLoader(train_ds, batch_size=BATCH,shuffle=True)
     test_loader = DataLoader(test_ds, batch_size=BATCH)
     val_loader = DataLoader(val_ds,batch_size=BATCH)
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
-    HIDDEN_SIZE = 32
+    HIDDEN_SIZE = 16
     NUM_FILTERS = 8
     NUM_LAYERS = 2
     KERNEL_SIZE = 4
     DROPOUT = 0.4
-    DROPOUT_LSTM = 0.4
+    DROPOUT_LSTM = 0.5
     print(f"using HIDDEN SIZE:{HIDDEN_SIZE} NUM LAYERS:{NUM_LAYERS} KERNEL_SIZE:{KERNEL_SIZE} DROPOUT:{DROPOUT}")
     # Slightly larger model for better capacity
     model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT_LSTM
     ).to(device)
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=LR, weight_decay=1e-3
+        model.parameters(), lr=LR, weight_decay=1e-2
     )  # Add weight decay
 
     # Learning rate scheduler
@@ -588,6 +617,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     best_brier = 1
     patience = 40
     patience_counter = 0
+    best_score = 0
     print("Starting training with  class accuracy focus...\n")
     for epoch in range(1, EPOCHS + 1):
         # Emphasize classification more heavily (alpha=2.0 vs beta=0.5)
@@ -596,17 +626,19 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
             train_loader,
             class_criterion,
             optimizer,
-            device,weighted=True
+            device, weighted=True
         )
-        test_acc,brier  = evaluate_weighted(
+        test_acc, brier = evaluate_weighted(
             model, test_loader, device
         )
-
+        train_acc, _ = evaluate_weighted(model,train_loader,device)
         # Step the scheduler
         scheduler.step()
 
+        score = test_acc - abs(train_acc - test_acc)
         # Early stopping based on accuracy
-        if test_acc > best_acc:
+        if score>best_score:
+            best_score = score
             best_brier = brier
             best_acc = test_acc
             patience_counter = 0
@@ -615,16 +647,13 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         else:
             patience_counter += 1
 
-
         # Early stopping
         if patience_counter >= patience:
-
             break
 
     # Load best model for final save
 
     print(f"Model saved as {dataset_dir}/{SEED}_binary_model.pt with brier: {best_brier}\n")
-
 
     cnn_model = CNNModel(
         input_size=input_size,
@@ -640,18 +669,21 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     }
     with open(f"{dataset_dir}/cnn_model_config.json", "w") as f:
         json.dump(cnn_model_config, f)
-    cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=LR, weight_decay=1e-3)
+    cnn_optimizer = torch.optim.Adam(cnn_model.parameters(), lr=LR, weight_decay=1e-2)
     cnn_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(cnn_optimizer, T_max=EPOCHS)
     patience = 40
     patience_counter = 0
     best_acc = 0
     best_brier = 1
+    best_score = 0
     for epoch in range(1, EPOCHS + 1):
-        train(cnn_model, train_loader, class_criterion, cnn_optimizer, device,weighted=True)
-        test_acc,brier = evaluate_weighted(cnn_model, test_loader, device)
+        train(cnn_model, train_loader, class_criterion, cnn_optimizer, device, weighted=True)
+        test_acc, brier = evaluate_weighted(cnn_model, test_loader, device)
+        train_acc, _ = evaluate_weighted(model, train_loader, device)
         cnn_scheduler.step()
-
-        if test_acc>best_acc:
+        score = test_acc - abs(train_acc-test_acc)
+        if score>best_score:
+            best_score = score
             best_brier = brier
             best_acc = test_acc
             patience_counter = 0
@@ -663,13 +695,8 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
 
     print(f"Model saved as {dataset_dir}/{SEED}_cnn_model.pt with brier: {best_brier}\n")
 
-
-
-
     with open(features_path, 'r') as f:
         feature_names = json.load(f)
-
-
 
     cnn_model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_cnn_model.pt"))
     cnn_model.eval()
@@ -677,10 +704,12 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     model.eval()
     weighted_train, train_brier = evaluate_weighted(model, train_loader, device)
     weighted_test, test_brier = evaluate_weighted(model, test_loader, device)
-    print(f" LSTM train: {train_brier:.3f}  test: {test_brier:.3f}  brier gap : {train_brier - test_brier:.3f}  weighted LSTM train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
+    print(
+        f" LSTM train: {train_brier:.3f}  test: {test_brier:.3f}  brier gap : {train_brier - test_brier:.3f}  weighted LSTM train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
     weighted_train, train_brier = evaluate_weighted(cnn_model, train_loader, device)
-    weighted_test, test_brier = evaluate_weighted(cnn_model, test_loader,device)
-    print(f" CNN train: {train_brier:.3f}  test: {test_brier:.3f}  brier gap: {train_brier - test_brier:.3f}  weighted CNN train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
+    weighted_test, test_brier = evaluate_weighted(cnn_model, test_loader, device)
+    print(
+        f" CNN train: {train_brier:.3f}  test: {test_brier:.3f}  brier gap: {train_brier - test_brier:.3f}  weighted CNN train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
     evalpath = Path(dataset_dir) / "eval_results.json"
     if evalpath.exists() and evalpath.stat().st_size > 0:
         eval_results = load_eval_results(dataset_dir)
@@ -694,13 +723,13 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         }
 
     print(f"Evaluating on VALIDATION DATASET")
-    weighted_val,val_brier = evaluate_weighted(cnn_model,val_loader,device)
+    weighted_val, val_brier = evaluate_weighted(cnn_model, val_loader, device)
     print(f"CNN VAL performance weighted: {weighted_val:3f} brier: {val_brier}")
     weighted_val, val_brier = evaluate_weighted(model, val_loader, device)
     print(f"LSTM VAL performance weighted: {weighted_val:3f} brier: {val_brier}")
     symbol = dataset_dir.split("_")[0]
     flags = [True, False]
-    thresholds = [0.50,  0.55,  0.60, 0.65]
+    thresholds = [0.50, 0.55, 0.60, 0.65]
     config = {}
     config["lstm"] = model
     config["cnn"] = cnn_model
@@ -714,9 +743,7 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
                 thresholds if use_lstm else [0.50],
                 thresholds if use_cnn else [0.50],
 
-
         ):
-
             accuracy_confidence, r = conf_eval(
                 config, val_loader,
 
@@ -729,13 +756,67 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     print(f"STATS FOR {symbol}")
 
 
-    _,median_change,_,median_dip = analyze_days(symbol=symbol,lookback_days=360)
-    print(f"median dip: {median_dip:.2%}")
-    print(f"estimated needed accuracy for 100% of dip entry {((median_change - median_dip * 1.0) / (2 * median_change)):.2%}")
-    print(f"estimated needed accuracy for 70% of dip entry {((median_change - median_dip*0.7)/(2*median_change)):.2%}")
-    print(f"estimated needed accuracy for 50% of dip entry {((median_change - median_dip * 0.5) /(2 * median_change)):.2%}")
+    print("Training Logistic Regression...")
 
-    return best_acc,0.0,0.0,0.0
+    # 56 candles → 8 groups of 7 (must divide T evenly)
+
+
+
+    Xcl_train = pool_and_flatten(X_train)
+    Xcl_test = pool_and_flatten(X_test)
+    Xcl_val = pool_and_flatten(X_val)
+
+    # labels & returns (squeeze the trailing dim added by NumpyDataset)
+    ycl_train = train_ds.y_class.squeeze().numpy().astype(np.int32)
+    ycl_test = test_ds.y_class.squeeze().numpy().astype(np.int32)
+    ycl_val = val_ds.y_class.squeeze().numpy().astype(np.int32)
+
+    ret_train = train_ds.y_change.squeeze().numpy()
+    ret_test = test_ds.y_change.squeeze().numpy()
+    ret_val = val_ds.y_change.squeeze().numpy()
+
+    def make_weights(ret, scale=60.0, min_w=0.15, max_w=3.0):
+        return np.clip(np.abs(ret) * scale, min_w, max_w)
+
+    def weighted_acc_np(y_true, y_pred, ret):
+        w = make_weights(ret)
+        return float(((y_true == y_pred).astype(np.float32) * w).sum() / w.sum())
+
+    sample_weights = make_weights(ret_train)
+    score = 0
+    best_score = 0
+    C_values = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]
+    best_C = 9
+    for C_val in C_values:
+        logreg = LogisticRegression(C=C_val, max_iter=3000, n_jobs=-1,solver='lbfgs')
+        logreg.fit(Xcl_train, ycl_train, sample_weight=sample_weights)
+
+
+
+
+        for name, mdl, Xtr, Xte, Xv in [
+            ("LogReg", logreg, Xcl_train, Xcl_test, Xcl_val),
+        ]:
+            ptr = (mdl.predict_proba(Xtr)[:, 1] > 0.5).astype(np.int32)
+            pte = (mdl.predict_proba(Xte)[:, 1] > 0.5).astype(np.int32)
+            pv = (mdl.predict_proba(Xv)[:, 1] > 0.5).astype(np.int32)
+            print(
+                f" {name}  "
+                f"train: {weighted_acc_np(ycl_train, ptr, ret_train):.3f}  "
+                f"test: {weighted_acc_np(ycl_test, pte, ret_test):.3f}  "
+                f"val: {weighted_acc_np(ycl_val, pv, ret_val):.3f}  "
+                f"gap: {weighted_acc_np(ycl_train, ptr, ret_train) - weighted_acc_np(ycl_test, pte, ret_test):+.3f}"
+            )
+            score = weighted_acc_np(ycl_test, pte, ret_test) -abs(weighted_acc_np(ycl_train, ptr, ret_train) - weighted_acc_np(ycl_test, pte, ret_test))
+            if score>best_score:
+                best_C=C_val
+                best_score=score
+    print(f"best c value:{best_C}")
+
+    joblib.dump(logreg, Path(dataset_dir) / "logreg.pkl")
+    print(f"Classical models saved to {dataset_dir}/")
+
+    return _,_,_,_
 def get_current_utc_time():
     """Get current hour and minute in UTC"""
     now_utc = datetime.now(timezone.utc)
@@ -757,7 +838,7 @@ def check_if_good_for_prediction(resample_hours=6, max_minutes_after=15):
         return False
 
     return True
-def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
+def train_for_live(dataset_dir,SEED = 42, EPOCHS=120, BATCH=128, LR=1e-3):
     random.seed(SEED)
     np.random.seed(SEED)
     torch.manual_seed(SEED)
@@ -789,8 +870,8 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     N_raw = len(X_raw)
 
     # Define boundaries on the FULL unfiltered data
-    train_start = int(0.1*N_raw)
-    train_end = int((0.75+0.1) * N_raw)
+    train_start = int(0.2*N_raw)
+    train_end = int((0.70+0.2) * N_raw)
     test_end = int(N_raw)
     save_split(X_raw[train_start:train_end], y_raw[train_start:train_end], dataset_dir, "train")
     save_split(X_raw[train_end:test_end], y_raw[train_end:test_end], dataset_dir, "test")
@@ -821,8 +902,7 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     # ===== WRITE BACK INTO ORIGINAL DATASET STORAGE =====
     train_ds.X = X_train
     test_ds.X = X_test
-    class_criterion = BCEWithLogitsLoss()  # Increased gamma
-    train_weights = np.linspace(0.80, 1.0, len(train_ds))
+    train_weights = np.linspace(1.0, 1.0, len(train_ds))
     sampler = WeightedRandomSampler(
         weights=torch.FloatTensor(train_weights),
         num_samples=len(train_ds),
@@ -834,11 +914,11 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]
     HIDDEN_SIZE = 16
-    NUM_FILTERS = 8
+    NUM_FILTERS = 16
     NUM_LAYERS = 2
-    KERNEL_SIZE = 4
-    DROPOUT = 0.3
-    DROPOUT_LSTM = 0.3
+    KERNEL_SIZE = 3
+    DROPOUT = 0.5
+    DROPOUT_LSTM = 0.5
     # Slightly larger model for better capacity
     model = LSTMModel(
         input_size=input_size, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, dropout=DROPOUT_LSTM
@@ -860,11 +940,12 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         json.dump(model_config, f)
 
     class_criterion = WeightedBCELoss(
-        scale=60.0, min_w=0.20, max_w=3.0
+        scale=60.0, min_w=0.15, max_w=3.0
     )
 
     # Early stopping variables
-    best_acc = 0.0
+    best_acc = 0
+    best_score = 0
     best_brier = 1
     patience = 40
     patience_counter = 0
@@ -880,14 +961,15 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
         test_acc,brier = evaluate_weighted(
             model, test_loader,  device
         )
-
+        train_acc,_ = evaluate_weighted(model,train_loader,device)
         # Step the scheduler
         scheduler.step()
-
+        score = test_acc - 1.0 * abs(train_acc - test_acc)
         # Early stopping based on accuracy
-        if test_acc>best_acc:
+        if score>best_score:
             best_brier = brier
             best_acc=test_acc
+            best_score=score
             patience_counter = 0
             # Save best model
             torch.save(model.state_dict(), f"{dataset_dir}/{SEED}_binary_model.pt")
@@ -919,14 +1001,17 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=100, BATCH=32, LR=1e-3):
     patience = 40
     patience_counter = 0
     best_acc = 0
+    best_score = 0
     best_brier = 1
     for epoch in range(1, EPOCHS + 1):
         train(cnn_model, train_loader, class_criterion, cnn_optimizer, device,weighted=True)
         test_acc,brier = evaluate_weighted(cnn_model, test_loader,  device)
+        train_acc,_ = evaluate_weighted(cnn_model,train_loader,device)
         cnn_scheduler.step()
-
-        if test_acc>best_acc:
+        score = test_acc - 1.0 * abs(train_acc - test_acc)
+        if score>best_score:
             best_acc = test_acc
+            best_score=score
             best_brier = brier
             patience_counter = 0
             torch.save(cnn_model.state_dict(), f"{dataset_dir}/{SEED}_cnn_model.pt")
@@ -989,7 +1074,7 @@ def eval_live(months,window_days,resample_hours,horizon):
 
 
 
-def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=0, paper_trade_days=30, seed=42,
+def paper_trade_historical(months, window_days, resample_hours, horizon,step_hours=1, cutoff=0, paper_trade_days=30, seed=42,
                            cooldown_candles=2):
     """
     Train on data ending `paper_trade_days` ago, then simulate trading on the last `paper_trade_days`.
@@ -1013,7 +1098,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
             window_days=window_days,
             resample_hours=resample_hours,
             horizon=horizon,
-            step=1,
+            step_hours=step_hours,
             cutoff=(paper_trade_days+cutoff),  # <-- key: training ends paper_trade_days ago
         )
         time.sleep(1)
@@ -1072,7 +1157,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
 
     for symbol in symbols:
         df_raw = download_data(symbol, months=6 + window_days // 30, cutoff=cutoff)
-        df_feat, _ = compute_features(df_raw, resample_hours)
+        df_feat, feature_names = compute_features(df_raw, resample_hours)
         df_sim = df_feat.iloc[-total_steps_needed:]
         symbol_data[symbol] = (df_sim.values.astype(np.float32), df_sim.index)
         cols = list(df_sim.columns)
@@ -1138,7 +1223,7 @@ def paper_trade_historical(months, window_days, resample_hours, horizon, cutoff=
                 if acc < 0.6:
                     acc = 0.0
                 window = feature_array[i - window_size:i]
-                X_scaled = scale_live_window(window, m["scaler"])
+                X_scaled = scale_live_window(window, m["scaler"],m["features"])
                 prediction,_ = conf_eval_live(
                     m, X_scaled,
                     c["use_cnn"], c["use_lstm"],
