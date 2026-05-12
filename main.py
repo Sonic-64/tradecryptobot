@@ -69,6 +69,7 @@ if __name__ == "__main__":
             crypto.grid_search("LSTM",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
         for symbol in symbols:
             crypto.grid_search("CNN",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
+
     if args.predict:
         crypto.eval_live(months=args.months,window_days=args.window_days,resample_hours=args.resample_hours,horizon=args.horizon)
     if args.data_fetch:

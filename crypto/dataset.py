@@ -4,7 +4,26 @@ import json
 
 from torch.utils.data import Dataset
 
+# ── Lightweight dataset that accepts tensors/arrays directly ──────────────────
+# NumpyDataset requires file paths and does preprocessing — we can't use it
+# inside permutation_test because we need to swap X on every trial without
+# hitting disk. ArrayDataset holds everything in memory.
+class ArrayDataset(Dataset):
+    def __init__(self, X: torch.Tensor, y_class: torch.Tensor, y_change: torch.Tensor):
+        """
+        X        : (N, T, F)  float32 tensor — already scaled
+        y_class  : (N, 1)     float32 tensor — binary labels
+        y_change : (N, 1)     float32 tensor — future returns (used for weighting)
+        """
+        self.X = X
+        self.y_class = y_class
+        self.y_change = y_change
 
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        return self.X[idx], self.y_class[idx], self.y_change[idx]
 class NumpyDataset(Dataset):
     def __init__(self, X_path, y_path, features_path,filter_noise=True,min_move = 0.004):
         self.X = torch.FloatTensor(np.load(X_path))

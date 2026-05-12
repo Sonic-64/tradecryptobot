@@ -263,11 +263,7 @@ class LSTMModel(nn.Module):
 
     def forward(self, x,training=False):
         lstm_out, _ = self.lstm(x)
-        if training:
-            mask = torch.bernoulli(
-                torch.full((x.size(0), x.size(1), 1), 0.85, device=x.device)
-            )
-            x = x * mask
+
         attn_scores = self.attn(lstm_out)
         attn_weights = torch.softmax(
             attn_scores / (lstm_out.size(-1) ** 0.5), dim=1

@@ -1,5 +1,7 @@
 import math
 import time
+from asyncio.windows_events import INFINITE
+
 import optuna
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 import torch
@@ -17,7 +19,7 @@ import json
 import random
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from .dataset import NumpyDataset
+from .dataset import NumpyDataset, ArrayDataset
 from . import analyze_days
 from .trend_predict import get_hmm_signal_from_batch, evaluate_hmm, evaluate_full, train_hmm, test_hmm, plot_hmm_states, \
     _get_regime_probs_batch
@@ -129,14 +131,57 @@ def evaluate_weighted(model, loader, device,
     weighted_acc = weighted_correct / (weighted_total + 1e-8)
 
     return weighted_acc, brier_weighted
+def randomize_windows(X: torch.Tensor) -> torch.Tensor:
+    X_np = X.detach().cpu().numpy()  # detach from graph, move to CPU first
+    X_random = np.random.randn(*X_np.shape).astype(np.float32)
+
+    for f in range(X_np.shape[2]):
+        mean = float(X_np[:, :, f].mean())  # explicit float — never a Tensor
+        std  = float(X_np[:, :, f].std())
+        X_random[:, :, f] = X_random[:, :, f] * std + mean
+
+    return torch.from_numpy(X_random)
 
 
 
+
+def permutation_test(
+        model,
+        X_test: torch.Tensor,  # (N, T, F) — scaled, from Train_val
+        y_class: torch.Tensor,  # (N, 1)    — test_ds.y_class
+        y_change: torch.Tensor,  # (N, 1)    — test_ds.y_change
+        device, # pass your evaluate_weighted function
+        n_trials: int = 500,
+        batch_size: int = 256,
+) -> tuple[float, float]:
+
+
+    # ── Real accuracy
+    def _weighted_acc(X):
+        with torch.no_grad():
+            logits = model(X.to(device))
+            probs = torch.sigmoid(logits).squeeze()  # ← squeeze here
+            preds = (probs > 0.5).float()  # now (N,) not (N,1)
+            y_cls = y_class.to(device).squeeze().float()
+            y_chg = y_change.to(device).squeeze().float()
+            correct = (preds == y_cls).float()  # (N,) == (N,) ✓
+            weights = (y_chg.abs() * 60.0).clamp(0.15, 3.0)
+            return (correct * weights).sum().item() / weights.sum().item()
+
+    real_acc = _weighted_acc(X_test)
+
+    perm_accs = []
+    for _ in range(n_trials):
+        X_random = randomize_windows(X_test)
+        perm_accs.append(_weighted_acc(X_random))
+
+    p_value = float((np.array(perm_accs) >= real_acc).mean())
+    return real_acc, p_value
 def grid_search(model_type,dataset_dir):
     print(f"performing grid search on model: {model_type} and dataset_dir : {dataset_dir}")
-    drop = [0.3,0.4,0.5]
+    drop = [0.3,0.4,0.5,0.6]
     hidden = [16,32,64]
-    layers = [2,3,4]
+    layers = [2,3]
     best_acc = 0
     best_config = None
     for hidden_size, num_layers,dropout in product(hidden,layers,drop):
@@ -170,7 +215,7 @@ def create_sample_weights(
 
     return weights
 
-def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN",SEED = 42, EPOCHS = 120, BATCH = 256, LR = 1e-4):
+def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN",SEED = 42, EPOCHS = 30, BATCH = 1024, LR = 2e-4):
 
     random.seed(SEED)
     np.random.seed(SEED)
@@ -204,65 +249,45 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
     N_raw = len(X_raw)
 
     # Define boundaries on the FULL unfiltered data
-    train_start = int(0.10 * N_raw)
+    train_start = 0
     train_end = int(0.80 * N_raw)
-    test_start = 0
-    test_end = int(0.900 * N_raw)
     val_end = int(N_raw)
     save_split(X_raw[train_start:train_end], y_raw[train_start:train_end], dataset_dir, "train")
-    save_split(np.concatenate([X_raw[test_start:train_start], X_raw[train_end:test_end]]),
-               np.concatenate([y_raw[test_start:train_start], y_raw[train_end:test_end]]), dataset_dir, "test")
-    save_split(X_raw[test_end:val_end], y_raw[test_end:val_end], dataset_dir, "val")
+    save_split(X_raw[train_end:val_end], y_raw[train_end:val_end], dataset_dir, "val")
 
     train_ds = NumpyDataset(f"{outdir_path}/train_X.npy", f"{outdir_path}/train_y.npy", features_path,
                             filter_noise=False)
-    test_ds = NumpyDataset(f"{outdir_path}/test_X.npy", f"{outdir_path}/test_y.npy", features_path, filter_noise=False)
     val_ds = NumpyDataset(f"{outdir_path}/val_X.npy", f"{outdir_path}/val_y.npy", features_path, filter_noise=False)
     X_train = torch.stack([train_ds[i][0] for i in range(len(train_ds))])
     X_val = torch.stack([val_ds[i][0] for i in range(len(val_ds))])
-    X_test = torch.stack([test_ds[i][0] for i in range(len(test_ds))])
     # ===== RESHAPE AND SCALE FEATURES =====
     Ntr, T, F = X_train.shape
-    Nte = X_test.shape[0]
     Nval = X_val.shape[0]
     # Flatten time steps for scaling
     Xtr_2d = X_train.view(-1, F).numpy()
-    Xte_2d = X_test.view(-1, F).numpy()
     Xval_2d = X_val.view(-1, F).numpy()
     # Fit scaler on TRAIN only and transform both train and test
     scaler = StandardScaler()
     Xtr_2d = scaler.fit_transform(Xtr_2d)  # ✅ Fit on train only
-    Xte_2d = scaler.transform(Xte_2d)  # ✅ Transform test
     Xval_2d = scaler.transform(Xval_2d)
     scaler_path = Path(dataset_dir) / "scaler.pkl"
     # Save scaler for later use
     joblib.dump(scaler, scaler_path)
-    y_test = torch.stack([test_ds[i][1] for i in range(len(test_ds))])
 
     # ===== ALWAYS-UP BASELINE =====
-    always_up_acc = (y_test == 1).float().mean().item()
 
     # Reshape back to original LSTM shape
     X_train = torch.from_numpy(Xtr_2d).float().view(Ntr, T, F)
-    X_test = torch.from_numpy(Xte_2d).float().view(Nte, T, F)
     X_val = torch.from_numpy(Xval_2d).float().view(Nval, T, F)
     # ===== WRITE BACK INTO ORIGINAL DATASET STORAGE =====
     train_ds.X = X_train
-    test_ds.X = X_test
     val_ds.X = X_val
 
     class_criterion = WeightedBCELoss(
         scale=60.0, min_w=0.15, max_w=3.0
     )
     # Increased gamma
-    train_weights = np.linspace(1.0, 1.0, len(train_ds))
-    sampler = WeightedRandomSampler(
-        weights=torch.FloatTensor(train_weights),
-        num_samples=len(train_ds),
-        replacement=True
-    )
-    train_loader = DataLoader(train_ds, batch_size=BATCH, sampler=sampler)
-    test_loader = DataLoader(test_ds, batch_size=BATCH)
+    train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=BATCH)
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
@@ -275,9 +300,9 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
 
         ).to(device)
         optimizer = torch.optim.Adam(
-            model.parameters(), lr=LR, weight_decay=1e-2
+            model.parameters(), lr=LR, weight_decay=2e-2
         )
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.9)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
     if model_type == "CNN":
         model = CNNModel(
             input_size=input_size,
@@ -285,7 +310,7 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
             kernel_size=num_layers,
             dropout=dropout,
         ).to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-2)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=2e-2)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
      # Add weight decay
 
@@ -296,9 +321,9 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
     # Early stopping variables
     best_acc = 0.0
     best_brier = 1
-    patience = 40
+    patience = 10
     patience_counter = 0
-    best_score = 0
+    best_score = -float("inf")
     for epoch in range(1, EPOCHS + 1):
         # Emphasize classification more heavily (alpha=2.0 vs beta=0.5)
         train_loss = train(
@@ -308,17 +333,18 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
             optimizer,
             device, weighted=True
         )
-        test_acc, brier = evaluate_weighted(
-            model, test_loader, device
-        )
+
+
         train_acc , _ = evaluate_weighted(model,train_loader,device)
         # Step the scheduler
         scheduler.step()
-        score = test_acc -1.0 * abs(train_acc-test_acc)
+        score = -train_loss
         # Early stopping based on accuracy
-        if test_acc > best_acc:
-            best_brier = brier
-            best_acc = test_acc
+
+        if score>best_score:
+
+
+            best_score = score
             patience_counter = 0
             # Save best model
             torch.save(model.state_dict(), f"{dataset_dir}/grid_search_model.pt")
@@ -327,18 +353,18 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
 
         # Early stopping
         if patience_counter >= patience:
+            print(f"patience triggered")
             break
     model.load_state_dict(torch.load(f"{dataset_dir}/grid_search_model.pt"))
     model.eval()
+    weighted_test, _ = evaluate_weighted(model, val_loader, device)
     weighted_train, train_brier = evaluate_weighted(model, train_loader, device)
-    weighted_test, test_brier = evaluate_weighted(model, test_loader, device)
     print(
         f"model type : {model_type} using HIDDEN SIZE:{hidden_size} NUM FILTERS:{hidden_size} NUM LAYERS:{num_layers} KERNEL_SIZE:{num_layers} DROPOUT:{dropout}")
     print(
         f"  weighted  train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
     # Load best model for final save
-
-    return best_score,(abs(weighted_train-weighted_test))
+    return best_score,(abs(weighted_train))
 # # --- Main function to run the training and evaluation to call from main.py ---
 
 
@@ -402,7 +428,7 @@ def conf_eval(config,loader,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_t
             actual_direction = 1 if p['actual_class'] > 0 else 0
             is_correct = predicted_direction == actual_direction
             correct_trades.append(predicted_direction == actual_direction)
-            w = float(np.clip(abs(p["actual_change"]) * 60.0, 0.20, 3.0))
+            w = float(np.clip(abs(p["actual_change"]) * 60.0, 0.15, 3.0))
             weighted_correct += w * int(is_correct)
             weighted_total += w
 
@@ -479,14 +505,7 @@ def save_split(X, y, directory, name):
     np.save(f"{directory}/{name}_X.npy", X)
     np.save(f"{directory}/{name}_y.npy", y)
     # Podział na train/test
-def pool_and_flatten(X_tensor):
-        # X_tensor: (N, T, F) torch → numpy pooled+flat
-    POOL_GROUPS = 27
-    arr = X_tensor.numpy()  # (N, T, F)
-    N, T, F = arr.shape
-    assert T % POOL_GROUPS == 0, f"T={T} not divisible by POOL_GROUPS={POOL_GROUPS}"
-    arr = arr.reshape(N, POOL_GROUPS, T // POOL_GROUPS, F).mean(axis=2)  # (N, G, F)
-    return arr.reshape(N, -1)  # (N, G*F)
+
 def Train_val(dataset_dir,SEED = 42, EPOCHS=120, BATCH=256, LR=1e-4):
     random.seed(SEED)
     np.random.seed(SEED)
@@ -536,43 +555,32 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=120, BATCH=256, LR=1e-4):
     save_split(X_raw[test_end:val_end], y_raw[test_end:val_end], dataset_dir, "val")
 
     train_ds = NumpyDataset(f"{outdir_path}/train_X.npy",f"{outdir_path}/train_y.npy",features_path,filter_noise=False)
-    test_ds = NumpyDataset(f"{outdir_path}/test_X.npy",f"{outdir_path}/test_y.npy",features_path,filter_noise=False)
     val_ds = NumpyDataset(f"{outdir_path}/val_X.npy",f"{outdir_path}/val_y.npy",features_path,filter_noise=False)
     X_train = torch.stack([train_ds[i][0] for i in range(len(train_ds))])
     X_val = torch.stack([val_ds[i][0] for i in range(len(val_ds))])
-    X_test = torch.stack([test_ds[i][0] for i in range(len(test_ds))])
     # ===== RESHAPE AND SCALE FEATURES =====
     Ntr, T, F = X_train.shape
-    Nte = X_test.shape[0]
     Nval = X_val.shape[0]
     # Flatten time steps for scaling
     Xtr_2d = X_train.view(-1, F).numpy()
-    Xte_2d = X_test.view(-1, F).numpy()
     Xval_2d = X_val.view(-1,F).numpy()
     # Fit scaler on TRAIN only and transform both train and test
     scaler = StandardScaler()
     Xtr_2d = scaler.fit_transform(Xtr_2d)  # ✅ Fit on train only
-    Xte_2d = scaler.transform(Xte_2d)  # ✅ Transform test
     Xval_2d = scaler.transform(Xval_2d)
     scaler_path = Path(dataset_dir) / "scaler.pkl"
     # Save scaler for later use
     joblib.dump(scaler, scaler_path)
-    y_test = torch.stack([test_ds[i][1] for i in range(len(test_ds))])
 
 
 
     # ===== ALWAYS-UP BASELINE =====
-    always_up_acc = (y_test == 1).float().mean().item()
 
-    print("\n===== BASELINE CHECK =====")
-    print(f"Always-UP Accuracy: {always_up_acc:.2%}")
     # Reshape back to original LSTM shape
     X_train = torch.from_numpy(Xtr_2d).float().view(Ntr, T, F)
-    X_test = torch.from_numpy(Xte_2d).float().view(Nte, T, F)
     X_val = torch.from_numpy(Xval_2d).float().view(Nval,T,F)
     # ===== WRITE BACK INTO ORIGINAL DATASET STORAGE =====
     train_ds.X = X_train
-    test_ds.X = X_test
     val_ds.X = X_val
 
     class_criterion = WeightedBCELoss(
@@ -580,16 +588,15 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=120, BATCH=256, LR=1e-4):
     )
     # Increased gamma
     train_loader = DataLoader(train_ds, batch_size=BATCH,shuffle=True)
-    test_loader = DataLoader(test_ds, batch_size=BATCH)
     val_loader = DataLoader(val_ds,batch_size=BATCH)
     # Get input size from the first item in dataset
     sample_x, _, _ = dataset[0]
     input_size = sample_x.shape[1]  # Number of features
     HIDDEN_SIZE = 16
-    NUM_FILTERS = 8
+    NUM_FILTERS = 16
     NUM_LAYERS = 2
     KERNEL_SIZE = 4
-    DROPOUT = 0.4
+    DROPOUT = 0.3
     DROPOUT_LSTM = 0.5
     print(f"using HIDDEN SIZE:{HIDDEN_SIZE} NUM LAYERS:{NUM_LAYERS} KERNEL_SIZE:{KERNEL_SIZE} DROPOUT:{DROPOUT}")
     # Slightly larger model for better capacity
@@ -628,19 +635,16 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=120, BATCH=256, LR=1e-4):
             optimizer,
             device, weighted=True
         )
-        test_acc, brier = evaluate_weighted(
-            model, test_loader, device
-        )
+
         train_acc, _ = evaluate_weighted(model,train_loader,device)
         # Step the scheduler
         scheduler.step()
 
-        score = test_acc - abs(train_acc - test_acc)
+        score = train_acc
         # Early stopping based on accuracy
+
         if score>best_score:
             best_score = score
-            best_brier = brier
-            best_acc = test_acc
             patience_counter = 0
             # Save best model
             torch.save(model.state_dict(), f"{dataset_dir}/{SEED}_binary_model.pt")
@@ -653,7 +657,6 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=120, BATCH=256, LR=1e-4):
 
     # Load best model for final save
 
-    print(f"Model saved as {dataset_dir}/{SEED}_binary_model.pt with brier: {best_brier}\n")
 
     cnn_model = CNNModel(
         input_size=input_size,
@@ -678,14 +681,13 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=120, BATCH=256, LR=1e-4):
     best_score = 0
     for epoch in range(1, EPOCHS + 1):
         train(cnn_model, train_loader, class_criterion, cnn_optimizer, device, weighted=True)
-        test_acc, brier = evaluate_weighted(cnn_model, test_loader, device)
-        train_acc, _ = evaluate_weighted(model, train_loader, device)
+
+        train_acc, _ = evaluate_weighted(cnn_model, train_loader, device)
         cnn_scheduler.step()
-        score = test_acc - abs(train_acc-test_acc)
-        if score>best_score:
+        score = train_acc
+        if score>best_score :
+
             best_score = score
-            best_brier = brier
-            best_acc = test_acc
             patience_counter = 0
             torch.save(cnn_model.state_dict(), f"{dataset_dir}/{SEED}_cnn_model.pt")
         else:
@@ -693,7 +695,6 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=120, BATCH=256, LR=1e-4):
         if patience_counter >= patience:
             break
 
-    print(f"Model saved as {dataset_dir}/{SEED}_cnn_model.pt with brier: {best_brier}\n")
 
     with open(features_path, 'r') as f:
         feature_names = json.load(f)
@@ -703,11 +704,11 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=120, BATCH=256, LR=1e-4):
     model.load_state_dict(torch.load(f"{dataset_dir}/{SEED}_binary_model.pt"))
     model.eval()
     weighted_train, train_brier = evaluate_weighted(model, train_loader, device)
-    weighted_test, test_brier = evaluate_weighted(model, test_loader, device)
+    weighted_test, test_brier = evaluate_weighted(model, val_loader, device)
     print(
         f" LSTM train: {train_brier:.3f}  test: {test_brier:.3f}  brier gap : {train_brier - test_brier:.3f}  weighted LSTM train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
     weighted_train, train_brier = evaluate_weighted(cnn_model, train_loader, device)
-    weighted_test, test_brier = evaluate_weighted(cnn_model, test_loader, device)
+    weighted_test, test_brier = evaluate_weighted(cnn_model, val_loader, device)
     print(
         f" CNN train: {train_brier:.3f}  test: {test_brier:.3f}  brier gap: {train_brier - test_brier:.3f}  weighted CNN train: {weighted_train:.3f}  test: {weighted_test:.3f}  gap: {weighted_train - weighted_test:.3f}")
     evalpath = Path(dataset_dir) / "eval_results.json"
@@ -756,64 +757,8 @@ def Train_val(dataset_dir,SEED = 42, EPOCHS=120, BATCH=256, LR=1e-4):
     print(f"STATS FOR {symbol}")
 
 
-    print("Training Logistic Regression...")
-
-    # 56 candles → 8 groups of 7 (must divide T evenly)
 
 
-
-    Xcl_train = pool_and_flatten(X_train)
-    Xcl_test = pool_and_flatten(X_test)
-    Xcl_val = pool_and_flatten(X_val)
-
-    # labels & returns (squeeze the trailing dim added by NumpyDataset)
-    ycl_train = train_ds.y_class.squeeze().numpy().astype(np.int32)
-    ycl_test = test_ds.y_class.squeeze().numpy().astype(np.int32)
-    ycl_val = val_ds.y_class.squeeze().numpy().astype(np.int32)
-
-    ret_train = train_ds.y_change.squeeze().numpy()
-    ret_test = test_ds.y_change.squeeze().numpy()
-    ret_val = val_ds.y_change.squeeze().numpy()
-
-    def make_weights(ret, scale=60.0, min_w=0.15, max_w=3.0):
-        return np.clip(np.abs(ret) * scale, min_w, max_w)
-
-    def weighted_acc_np(y_true, y_pred, ret):
-        w = make_weights(ret)
-        return float(((y_true == y_pred).astype(np.float32) * w).sum() / w.sum())
-
-    sample_weights = make_weights(ret_train)
-    score = 0
-    best_score = 0
-    C_values = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]
-    best_C = 9
-    for C_val in C_values:
-        logreg = LogisticRegression(C=C_val, max_iter=3000, n_jobs=-1,solver='lbfgs')
-        logreg.fit(Xcl_train, ycl_train, sample_weight=sample_weights)
-
-
-
-
-        for name, mdl, Xtr, Xte, Xv in [
-            ("LogReg", logreg, Xcl_train, Xcl_test, Xcl_val),
-        ]:
-            ptr = (mdl.predict_proba(Xtr)[:, 1] > 0.5).astype(np.int32)
-            pte = (mdl.predict_proba(Xte)[:, 1] > 0.5).astype(np.int32)
-            pv = (mdl.predict_proba(Xv)[:, 1] > 0.5).astype(np.int32)
-            print(
-                f" {name}  "
-                f"train: {weighted_acc_np(ycl_train, ptr, ret_train):.3f}  "
-                f"test: {weighted_acc_np(ycl_test, pte, ret_test):.3f}  "
-                f"val: {weighted_acc_np(ycl_val, pv, ret_val):.3f}  "
-                f"gap: {weighted_acc_np(ycl_train, ptr, ret_train) - weighted_acc_np(ycl_test, pte, ret_test):+.3f}"
-            )
-            score = weighted_acc_np(ycl_test, pte, ret_test) -abs(weighted_acc_np(ycl_train, ptr, ret_train) - weighted_acc_np(ycl_test, pte, ret_test))
-            if score>best_score:
-                best_C=C_val
-                best_score=score
-    print(f"best c value:{best_C}")
-
-    joblib.dump(logreg, Path(dataset_dir) / "logreg.pkl")
     print(f"Classical models saved to {dataset_dir}/")
 
     return _,_,_,_
