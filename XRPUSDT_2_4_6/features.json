@@ -1,0 +1,12 @@
+[
+  "High",
+  "Low",
+  "Close",
+  "volume_zscore",
+  "r6",
+  "r12",
+  "trend_slope_short",
+  "taker_buy_ratio_change",
+  "distance_hl_position",
+  "bb_width"
+]

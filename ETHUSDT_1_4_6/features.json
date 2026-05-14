@@ -1,0 +1,22 @@
+[
+  "High",
+  "Low",
+  "Close",
+  "volume_zscore",
+  "funding_z",
+  "r1",
+  "r6",
+  "r6_lag",
+  "r6_lag2",
+  "lyapunov",
+  "phase_density",
+  "variance_ratio",
+  "spectral_entropy",
+  "taker_buy_ratio",
+  "vol_change",
+  "distance_hl_position",
+  "bb_width",
+  "bb_pos",
+  "ou_speed",
+  "close_vwap_dev"
+]

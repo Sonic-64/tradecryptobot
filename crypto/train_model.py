@@ -21,10 +21,9 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from .dataset import NumpyDataset, ArrayDataset
 from . import analyze_days
-from .trend_predict import get_hmm_signal_from_batch, evaluate_hmm, evaluate_full, train_hmm, test_hmm, plot_hmm_states, \
-    _get_regime_probs_batch
+
 from .tune import  save_eval_results, insert_eval_results, load_eval_results,get_best_config
-from .model import LSTMModel, CNNModel, WeightedBCELoss, HMMRegime, WeightedBrierLoss, MoEEnsemble
+from .model import LSTMModel, CNNModel,MLPModel, WeightedBCELoss, WeightedBrierLoss
 from .data_fetch import (
     make_dataset,
     get_evaluate_window,
@@ -145,42 +144,11 @@ def randomize_windows(X: torch.Tensor) -> torch.Tensor:
 
 
 
-def permutation_test(
-        model,
-        X_test: torch.Tensor,  # (N, T, F) — scaled, from Train_val
-        y_class: torch.Tensor,  # (N, 1)    — test_ds.y_class
-        y_change: torch.Tensor,  # (N, 1)    — test_ds.y_change
-        device, # pass your evaluate_weighted function
-        n_trials: int = 500,
-        batch_size: int = 256,
-) -> tuple[float, float]:
 
-
-    # ── Real accuracy
-    def _weighted_acc(X):
-        with torch.no_grad():
-            logits = model(X.to(device))
-            probs = torch.sigmoid(logits).squeeze()  # ← squeeze here
-            preds = (probs > 0.5).float()  # now (N,) not (N,1)
-            y_cls = y_class.to(device).squeeze().float()
-            y_chg = y_change.to(device).squeeze().float()
-            correct = (preds == y_cls).float()  # (N,) == (N,) ✓
-            weights = (y_chg.abs() * 60.0).clamp(0.15, 3.0)
-            return (correct * weights).sum().item() / weights.sum().item()
-
-    real_acc = _weighted_acc(X_test)
-
-    perm_accs = []
-    for _ in range(n_trials):
-        X_random = randomize_windows(X_test)
-        perm_accs.append(_weighted_acc(X_random))
-
-    p_value = float((np.array(perm_accs) >= real_acc).mean())
-    return real_acc, p_value
 def grid_search(model_type,dataset_dir):
     print(f"performing grid search on model: {model_type} and dataset_dir : {dataset_dir}")
-    drop = [0.3,0.4,0.5,0.6]
-    hidden = [16,32,64]
+    drop = [0.0,0.2,0.5]
+    hidden = [64]
     layers = [2,3]
     best_acc = 0
     best_config = None
@@ -215,7 +183,7 @@ def create_sample_weights(
 
     return weights
 
-def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN",SEED = 42, EPOCHS = 30, BATCH = 1024, LR = 2e-4):
+def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN",SEED = 42, EPOCHS = 120, BATCH = 1024, LR = 1e-4):
 
     random.seed(SEED)
     np.random.seed(SEED)
@@ -300,7 +268,7 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
 
         ).to(device)
         optimizer = torch.optim.Adam(
-            model.parameters(), lr=LR, weight_decay=2e-2
+            model.parameters(), lr=LR, weight_decay=1e-2
         )
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
     if model_type == "CNN":
@@ -310,7 +278,16 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
             kernel_size=num_layers,
             dropout=dropout,
         ).to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=2e-2)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-2)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+    if model_type == "MLP":
+        model = MLPModel(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout,
+        ).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-2)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
      # Add weight decay
 
@@ -321,7 +298,7 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
     # Early stopping variables
     best_acc = 0.0
     best_brier = 1
-    patience = 10
+    patience = 40
     patience_counter = 0
     best_score = -float("inf")
     for epoch in range(1, EPOCHS + 1):
@@ -338,7 +315,7 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
         train_acc , _ = evaluate_weighted(model,train_loader,device)
         # Step the scheduler
         scheduler.step()
-        score = -train_loss
+        score = train_acc
         # Early stopping based on accuracy
 
         if score>best_score:
@@ -372,135 +349,6 @@ def train_with_params(dataset_dir,hidden_size,num_layers,dropout,model_type="CNN
 # ── Evaluate MoE ──────────────────────────────────────────────────────────────
 
 
-
-def conf_eval(config,loader,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50,label=""):
-    accuracy_confidence = 0.5
-    weighted_correct = 0.0
-    weighted_total = 0.0
-    all_predictions = []
-    model = config["lstm"]
-    cnn_model = config["cnn"]
-    scaler = config["scaler"]
-    features = config["features"]
-    with torch.no_grad():
-        for xb, y_class, y_change in loader:
-            xb = xb.to("cpu")
-
-            # Predykcja z obu modeli
-            logits = model(xb)  # ignorujemy price z class_model
-            prob_up = torch.sigmoid(logits)
-
-            logits_cnn = cnn_model(xb)
-            prop_cnn = torch.sigmoid(logits_cnn)
-
-            # Przenieś na CPU
-            prob_up = prob_up.cpu().numpy().flatten()
-            prop_cnn = prop_cnn.cpu().numpy().flatten()
-            # Zapisz wszystko
-            for i in range(len(prob_up)):
-                all_predictions.append({
-                    'prob_up': prob_up[i],
-                    'prob_up_cnn': prop_cnn[i],
-                    'actual_class': y_class[i],
-                    'actual_change':y_change[i],
-                })
-
-
-    trades = []
-    correct_trades = []
-
-
-    for p in all_predictions:
-        cnn_long = p['prob_up_cnn']  > cnn_threshold if use_cnn else True
-        cnn_short = p['prob_up_cnn']  < (1-cnn_threshold) if use_cnn else True
-        lstm_long = p['prob_up']  > prop_threshold if use_lstm else True
-        lstm_short = p['prob_up']  < (1-prop_threshold) if use_lstm else True
-        predict_long = (lstm_long and cnn_long)
-
-                # Short: oba modele przewidują spadek
-        predict_short = (lstm_short and cnn_short )
-
-        if predict_long or predict_short:
-
-
-            trades.append(p)
-            predicted_direction = 1 if predict_long else 0
-            actual_direction = 1 if p['actual_class'] > 0 else 0
-            is_correct = predicted_direction == actual_direction
-            correct_trades.append(predicted_direction == actual_direction)
-            w = float(np.clip(abs(p["actual_change"]) * 60.0, 0.15, 3.0))
-            weighted_correct += w * int(is_correct)
-            weighted_total += w
-
-    result = {
-        "label": label,
-        "use_lstm": use_lstm,
-        "use_cnn": use_cnn,
-        "threshold":prop_threshold,
-        "cnn_threshold":cnn_threshold,
-        "num_trades": len(correct_trades),
-        "total_samples": len(all_predictions),
-        "coverage_pct": round(len(correct_trades) / len(all_predictions) * 100, 2) if all_predictions else 0,
-        "accuracy": None,
-    }
-    if trades:
-
-        accuracy_confidence = weighted_correct/weighted_total
-        result["accuracy"] = round(accuracy_confidence * 100, 2)
-
-
-    return accuracy_confidence,result
-def conf_eval_live(config,xb,use_cnn=True,use_lstm=True,prop_threshold=0.50,cnn_threshold=0.50):
-    result = []
-    model = config["lstm"]
-    cnn_model = config["cnn"]
-    scaler = config["scaler"]
-    features = config["features"]
-    predicted_direction = -1
-    max_signal_strenght = 1
-    signal_strenght = 0
-    with torch.no_grad():
-
-        xb = xb.to("cpu")
-
-            # Predykcja z obu modeli
-        logits = model(xb)  # ignorujemy price z class_model
-        prob_up = torch.sigmoid(logits)
-
-        logits_cnn = cnn_model(xb)
-        prop_cnn = torch.sigmoid(logits_cnn)
-            # Przenieś na CPU
-        prob_up = prob_up.cpu().numpy().flatten()
-        prop_cnn = prop_cnn.cpu().numpy().flatten()
-        last_candle = xb[:, -1, :].cpu().numpy()
-            # Zapisz wszystko
-        for i in range(len(prob_up)):
-            result.append({
-                'prob_up': prob_up[i],
-                'prob_up_cnn': prop_cnn[i],
-                'last_candle':last_candle[i],
-            })
-
-
-    for p in result:
-
-        cnn_long = p['prob_up_cnn']  > cnn_threshold if use_cnn else True
-        cnn_short = p['prob_up_cnn']   < (1-cnn_threshold) if use_cnn else True
-        lstm_long = p['prob_up']   > prop_threshold if use_lstm else True
-        lstm_short = p['prob_up']   < (1-prop_threshold) if use_lstm else True
-        predict_long = (lstm_long and cnn_long )
-
-        predict_short = (lstm_short and cnn_short)
-
-        if predict_long or predict_short:
-
-            predicted_direction = 1 if predict_long else 0
-
-
-
-
-
-    return predicted_direction,math.exp(signal_strenght)
 def save_split(X, y, directory, name):
     np.save(f"{directory}/{name}_X.npy", X)
     np.save(f"{directory}/{name}_y.npy", y)
@@ -789,7 +637,6 @@ def train_for_live(dataset_dir,SEED = 42, EPOCHS=120, BATCH=128, LR=1e-3):
     torch.manual_seed(SEED)
     torch.backends.cudnn.deterministic = True
     print(f"TRAININ ON {dataset_dir}")
-    train_hmm(dataset_dir,live=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
         torch.cuda.manual_seed_all(SEED)

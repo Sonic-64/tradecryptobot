@@ -235,6 +235,38 @@ class WeightedBrierLoss(nn.Module):
         )  # (B, 1)
 
         return (brier * weights).mean()
+class MLPModel(nn.Module):
+    """
+    Fully configurable MLP — same interface as your LSTM/CNN.
+    Builds a funnel: hidden_size → hidden_size//2 → ... → 1
+    """
+    def __init__(
+        self,
+        input_size:  int,
+        hidden_size: int   = 64,
+        num_layers:  int   = 2,
+        dropout:     float = 0.3,
+    ):
+        super().__init__()
+
+        layers = []
+        in_dim = input_size
+
+        for i in range(num_layers):
+            out_dim = max(hidden_size // (2 ** i), 16)  # funnel, floor at 16
+            layers += [
+                nn.Linear(in_dim, out_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout if i < num_layers - 1 else dropout * 0.5),
+            ]
+            in_dim = out_dim
+
+        layers.append(nn.Linear(in_dim, 1))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor,training=False) -> torch.Tensor:
+        x = x[:, -1, :]                  # (B, T, F) → (B, F)
+        return self.net(x) # (B,) logit
 class LSTMModel(nn.Module):
     def __init__(self, input_size, hidden_size=64, num_layers=2, dropout=0.3):
         super().__init__()
@@ -321,7 +353,6 @@ class CNNModel(nn.Module):
                         dilation=dilation,
                         padding=padding,
                     ),
-                    nn.BatchNorm1d(num_filters),
                     nn.GELU(),
                     nn.Dropout(dropout),
                 )
@@ -340,7 +371,7 @@ class CNNModel(nn.Module):
         # Optionally slice to most recent N steps
         # e.g. cnn_window_steps=28 → last 3.5 days of 3h candles
 
-        x = x[:, -24:, :]   # (B, N, F)
+        x = x[:, :, :]   # (B, N, F)
 
         # Project features: (B, T, F) → (B, T, C)
         x = self.input_proj(x)
@@ -363,83 +394,6 @@ class CNNModel(nn.Module):
         return self.classifier(x)  # (B,)
 
 
-class MoEEnsemble:
-    """2 LSTM + 2 CNN experts gated by HMM regime probabilities (trending/sideways)."""
-
-    REGIME_NAMES = ['trending', 'sideways']
-    N_EXPERTS    = 2
-
-    def __init__(self, input_size, hidden_size=24,
-                 num_filters=24, kernel_size=4,
-                 dropout=0.25, device='cpu'):
-        self.device      = device
-        self.input_size  = input_size
-        self.hidden_size = hidden_size
-        self.num_filters = num_filters
-
-        self.lstms = nn.ModuleList([
-            LSTMModel(input_size, hidden_size, dropout=dropout)
-            for _ in range(self.N_EXPERTS)
-        ]).to(device)
-
-        self.cnns = nn.ModuleList([
-            CNNModel(input_size, num_filters, kernel_size,
-                     dropout=dropout)
-            for _ in range(self.N_EXPERTS)
-        ]).to(device)
-
-    def forward_moe(self, xb, regime_probs):
-        """
-        xb:           (B, T, F)
-        regime_probs: (B, 2) — [p_trending, p_sideways]
-        returns:      (B, 1) — final P(up)
-        """
-        xb           = xb.to(self.device)
-        regime_probs = regime_probs.to(self.device)
-
-        # (B, 2) — one probability per expert
-        lstm_p = torch.stack([
-            torch.sigmoid(self.lstms[r](xb)).squeeze(-1)
-            for r in range(self.N_EXPERTS)
-        ], dim=1)
-
-        cnn_p = torch.stack([
-            torch.sigmoid(self.cnns[r](xb)).squeeze(-1)
-            for r in range(self.N_EXPERTS)
-        ], dim=1)
-
-        expert_p = (lstm_p + cnn_p) / 2.0                               # (B, 2)
-        final_p  = (expert_p * regime_probs).sum(dim=1, keepdim=True)   # (B, 1)
-        return final_p
-
-    def save(self, dataset_dir, seed=42):
-        d = Path(dataset_dir)
-        for r, name in enumerate(self.REGIME_NAMES):
-            torch.save(self.lstms[r].state_dict(),
-                       d / f"{seed}_lstm_{name}.pt")
-            torch.save(self.cnns[r].state_dict(),
-                       d / f"{seed}_cnn_{name}.pt")
-        json.dump({
-            "input_size":  self.input_size,
-            "hidden_size": self.hidden_size,
-            "num_filters": self.num_filters,
-        }, open(d / "moe_config.json", "w"))
-
-    @classmethod
-    def load(cls, dataset_dir, seed=42, device='cpu'):
-        cfg = json.load(open(Path(dataset_dir) / "moe_config.json"))
-        moe = cls(cfg["input_size"], cfg["hidden_size"],
-                  cfg["num_filters"], device=device)
-        for r, name in enumerate(cls.REGIME_NAMES):
-            moe.lstms[r].load_state_dict(torch.load(
-                Path(dataset_dir) / f"{seed}_lstm_{name}.pt",
-                map_location=device))
-            moe.cnns[r].load_state_dict(torch.load(
-                Path(dataset_dir) / f"{seed}_cnn_{name}.pt",
-                map_location=device))
-        for m in list(moe.lstms) + list(moe.cnns):
-            m.eval()
-        return moe
 
 # Test if code runs
 class FocalLoss(nn.Module):

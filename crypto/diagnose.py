@@ -78,69 +78,7 @@ def get_attention_weights(model, xb):
     return attn_weights.squeeze().cpu().numpy()  # (T,)
 
 
-def analyze_feature_importance(model, loader, scaler,
-                               feature_names, n_batches=20):
-    """
-    Permutation importance — shuffle each feature and measure
-    accuracy drop. Bigger drop = more important feature.
-    Works for any model, not just attention models.
-    """
-    model.eval()
 
-    # baseline accuracy
-    baseline_correct = 0
-    total = 0
-    all_xb = []
-    all_y = []
-
-    with torch.no_grad():
-        for i, (xb, y_class, _) in enumerate(loader):
-            if i >= n_batches:
-                break
-            all_xb.append(xb)
-            all_y.append(y_class)
-
-    all_xb = torch.cat(all_xb)  # (N, T, F)
-    all_y = torch.cat(all_y)  # (N, 1)
-
-    with torch.no_grad():
-        baseline_preds = (torch.sigmoid(model(all_xb)) > 0.5)
-        baseline_acc = (baseline_preds == all_y).float().mean().item()
-
-    print(f"\nBaseline accuracy: {baseline_acc:.3f}")
-    print(f"\n{'Feature':<20} {'Acc when shuffled':>18} {'Drop':>8} {'Importance':>12}")
-    print('─' * 62)
-
-    importances = {}
-
-    F = all_xb.shape[2]
-    for f_idx, f_name in enumerate(feature_names):
-        xb_permuted = all_xb.clone()
-
-        # shuffle this feature across the batch dimension
-        # keeps time structure intact — only shuffles which
-        # sample gets which feature values
-        perm = torch.randperm(all_xb.shape[0])
-        xb_permuted[:, :, f_idx] = all_xb[perm, :, f_idx]
-
-        with torch.no_grad():
-            perm_preds = (torch.sigmoid(model(xb_permuted)) > 0.5)
-            perm_acc = (perm_preds == all_y).float().mean().item()
-
-        drop = baseline_acc - perm_acc
-        importances[f_name] = drop
-
-        bar = '█' * max(0, int(drop * 200))
-        print(f"  {f_name:<18} {perm_acc:>18.3f} {drop:>+8.3f} {bar}")
-
-    # sort by importance
-    print(f"\n{'─' * 62}")
-    print("Ranked by importance:")
-    for name, imp in sorted(importances.items(),
-                            key=lambda x: x[1], reverse=True):
-        print(f"  {name:<20} {imp:+.4f}")
-
-    return importances
 
 
 def plot_attention_over_time(model, xb, feature_names,

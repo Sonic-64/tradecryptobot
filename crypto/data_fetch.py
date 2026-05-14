@@ -1,5 +1,6 @@
 import argparse
 import json
+
 from datetime import datetime,timezone,date,timedelta
 from pathlib import Path
 from typing import Tuple, List, Optional
@@ -8,6 +9,7 @@ import pandas as pd
 import torch
 from binance.client import Client
 import requests
+from scipy.signal import periodogram
 from sklearn.preprocessing import StandardScaler
 import joblib
 
@@ -172,6 +174,143 @@ def rolling_slope(series, window=20):
             coef = np.polyfit(x, y, 1)
             slopes.append(coef[0] / series.iloc[i])  # normalize by price
     return pd.Series(slopes, index=series.index)
+def lyapunov_exponent(series, lag=1):
+    """
+    Positive → chaotic, unpredictable
+    Negative → stable, predictable
+    Near 0   → edge of chaos, regime transition
+    """
+    n = len(series)
+    divergences = []
+    for i in range(1, n - lag):
+        d0 = abs(series[i] - series[i-1]) + 1e-10
+        d1 = abs(series[i+lag] - series[i]) + 1e-10
+        divergences.append(np.log(d1 / d0))
+    return np.mean(divergences)
+
+
+def phase_space_density(series, lag=6, threshold=0.02):
+    """
+    Reconstructs the attractor of the price dynamics.
+    Measures how often price returns to current region.
+    High density = strong attractor = price likely to stay/return
+    Low density  = price in unexplored territory = higher uncertainty
+    """
+    n = len(series)
+    if n < lag * 2:
+        return 0.5
+
+    # embed in 2D phase space
+    x1 = series[:-lag]
+    x2 = series[lag:]
+
+    # normalise
+    x1 = (x1 - x1.mean()) / (x1.std() + 1e-8)
+    x2 = (x2 - x2.mean()) / (x2.std() + 1e-8)
+
+    # current point
+    cx, cy = x1[-1], x2[-1]
+
+    # count nearby points (recurrence)
+    distances = np.sqrt((x1 - cx) ** 2 + (x2 - cy) ** 2)
+    return (distances < threshold).mean()
+
+
+def variance_ratio(series, k=6):
+    """
+    VR > 1 → positive autocorrelation → momentum
+    VR < 1 → negative autocorrelation → mean reversion
+    VR = 1 → random walk → no edge
+    """
+    n = len(series)
+    rets = np.diff(np.log(series + 1e-8))
+    mu = rets.mean()
+
+    # variance of 1-period returns
+    var1 = np.sum((rets - mu) ** 2) / (n - 2)
+
+    # variance of k-period returns
+    rets_k = np.log(series[k:] / (series[:-k] + 1e-8))
+    mu_k = k * mu
+    var_k = np.sum((rets_k - mu_k) ** 2) / (k * (n - k - 1))
+
+    return var_k / (var1 + 1e-8)
+
+
+def dfa(series, min_scale=4, max_scale=None):
+    """
+    Measures long-range correlations.
+    alpha > 0.5 → persistent (trending)
+    alpha < 0.5 → anti-persistent (mean reverting)
+    alpha = 0.5 → uncorrelated (random walk)
+    More robust than Hurst for short series.
+    """
+    n = len(series)
+    if max_scale is None:
+        max_scale = n // 4
+
+    scales = np.logspace(
+        np.log10(min_scale),
+        np.log10(max_scale),
+        num=10, dtype=int
+    )
+    scales = np.unique(scales)
+
+    # cumulative sum (integrate)
+    y = np.cumsum(series - series.mean())
+
+    fluctuations = []
+    for scale in scales:
+        n_segments = n // scale
+        if n_segments < 2:
+            continue
+        rms = []
+        for seg in range(n_segments):
+            segment = y[seg * scale:(seg + 1) * scale]
+            x_seg = np.arange(scale)
+            # detrend segment with linear fit
+            coeffs = np.polyfit(x_seg, segment, 1)
+            trend = np.polyval(coeffs, x_seg)
+            rms.append(np.sqrt(np.mean((segment - trend) ** 2)))
+        fluctuations.append(np.mean(rms))
+
+    if len(fluctuations) < 2:
+        return 0.5
+
+    alpha = np.polyfit(
+        np.log(scales[:len(fluctuations)]),
+        np.log(fluctuations), 1
+    )[0]
+    return alpha
+
+
+def ou_parameters(series):
+    """
+    Fits Ornstein-Uhlenbeck process to price.
+    Returns mean reversion speed theta.
+    High theta = fast mean reversion = fade signals
+    Low theta  = slow reversion = trend following works
+    """
+    x = series[:-1]
+    dx = np.diff(series)
+
+    # OLS regression: dx = -theta * x * dt + noise
+    if len(x) < 10 or x.std() < 1e-8:
+        return 0.0
+
+    theta = -np.polyfit(x, dx, 1)[0]
+    return max(theta, 0.0)
+
+def spectral_entropy(series):
+    """
+    Measures how spread out the frequency content is.
+    Low  = energy concentrated in few frequencies = trending
+    High = energy spread across all frequencies   = random/noisy
+    """
+    _, psd = periodogram(series)
+    psd_norm = psd / (psd.sum() + 1e-8)
+    psd_norm = psd_norm[psd_norm > 0]
+    return -np.sum(psd_norm * np.log2(psd_norm))
 
 def compute_features(df: pd.DataFrame, resample_hours: int,offset_hours=0) -> Tuple[pd.DataFrame, List[str]]:
     """
@@ -211,30 +350,32 @@ def compute_features(df: pd.DataFrame, resample_hours: int,offset_hours=0) -> Tu
     # Dodaj małą stałą aby uniknąć dzielenia przez 0
     df_resampled['volume_zscore'] = (df_resampled['Volume'] - volume_mean) / (volume_std + 1e-8)
     df_resampled['volume_zscore'] = df_resampled['volume_zscore'].clip(-5, 5)
-    funding_mean = df_resampled['funding_rate'].rolling(window=168,min_periods=1).mean()
-    funding_std = df_resampled['funding_rate'].rolling(window=168,min_periods=1).std()
+    funding_mean = df_resampled['funding_rate'].rolling(window=84,min_periods=1).mean()
+    funding_std = df_resampled['funding_rate'].rolling(window=84,min_periods=1).std()
     df_resampled['funding_z'] = (df_resampled['funding_rate']-funding_mean)/(funding_std+1e-10)
     df_resampled['funding_z'] = df_resampled['funding_z'].clip(-5,5)
     df_resampled['vwap'] = (
             df_resampled['Quote Asset Volume'] /
             (df_resampled['Volume'] + 1e-8)
     )
-    df_resampled['local_ATH'] = df_resampled['vwap'].rolling(window=168, min_periods=1).max()
-    df_resampled['local_ATL'] = df_resampled['vwap'].rolling(window=168, min_periods=1).min()
+    df_resampled['local_ATH'] = df_resampled['High'].rolling(window=168, min_periods=1).max()
+    df_resampled['local_ATL'] = df_resampled['Low'].rolling(window=168, min_periods=1).min()
     df_resampled['pct_change'] = df_resampled['Close'].pct_change(periods=8,fill_method=None)
     df_resampled['funding_change'] = df_resampled['funding_rate'].pct_change(periods=8,fill_method=None)
     df_resampled['pct_change'] = df_resampled['pct_change'].fillna(0.0)
     is_ath = df_resampled['Close'] == df_resampled['local_ATH']
     is_atl = df_resampled['Close'] == df_resampled['local_ATL']
     df_resampled['r1'] = df_resampled['vwap'].pct_change(periods=1, fill_method=None)
-    df_resampled['r6'] = df_resampled['vwap'].pct_change(periods=8, fill_method=None)
+    df_resampled['r6'] = df_resampled['vwap'].pct_change(periods=6, fill_method=None)
+    df_resampled['r6_lag'] = df_resampled['r6'].shift(6)
+    df_resampled['r6_lag2'] = df_resampled['r6'].shift(12)
     df_resampled['candle_pos'] = (df_resampled['Close'] - df_resampled['Low'])/(df_resampled['High']-df_resampled['Low']+ 1e-8)
     df_resampled['candle_pos'] = df_resampled['candle_pos'].clip(0.0, 1.0)
     trades_mean = df_resampled['Number of Trades'].rolling(window=168,min_periods=1).mean()
     trades_std = df_resampled['Number of Trades'].rolling(window=168,min_periods=1).std()
     df_resampled['trades_z'] = (df_resampled['Number of Trades'] - trades_mean)/(trades_std+1e-10)
     df_resampled['trades_z'] = df_resampled['trades_z'].clip(-5,5)
-
+    df_resampled['trades_change'] = df_resampled['Number of Trades'].pct_change(periods=1,fill_method=None)
     # Time since local high
     not_ath = ~is_ath
     cumsum_not_ath = not_ath.cumsum()
@@ -247,16 +388,21 @@ def compute_features(df: pd.DataFrame, resample_hours: int,offset_hours=0) -> Tu
     cumsum_not_atl = not_atl.cumsum()
     last_atl_cumsum = cumsum_not_atl.where(is_atl).ffill().fillna(0)
     df_resampled['time_local_Low'] = cumsum_not_atl - last_atl_cumsum
-
-    # 2. VOLATILITY RATIO (short-term vs long-term volatility)
-    # Short-term volatility (6 periods = ~1.5 days for 6h candles)
+    df_resampled['lyapunov'] = df_resampled['Close'].rolling(60).apply(
+        lambda x: lyapunov_exponent(x), raw=True)
+    df_resampled['phase_density'] = df_resampled['Close'].rolling(60).apply(
+        lambda x: phase_space_density(x), raw=True
+    )
+    df_resampled['variance_ratio'] = df_resampled['Close'].rolling(60).apply(
+        lambda x: variance_ratio(x, k=6), raw=True)
+    df_resampled['spectral_entropy'] = df_resampled['Close'].rolling(64).apply(
+        lambda x: spectral_entropy(x), raw=True
+    )
     df_resampled['trend_slope_short'] = rolling_slope(df_resampled['vwap'], window=168)
-    # 3. VOLUME-PRICE CORRELATION (smart money detection)
-    # 20-period rolling correlation between volume and price
+
     delta = df_resampled['Close'].diff()
-    gain = delta.where(delta > 0, 0).rolling(window=112, min_periods=1).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=112, min_periods=1).mean()
-    # Avoid divide by zero
+    gain = delta.where(delta > 0, 0).rolling(window=30, min_periods=1).mean()
+    loss = -delta.where(delta < 0, 0).rolling(window=30, min_periods=1).mean()
     rs = gain / loss.replace(0, np.nan)
     rs = rs.fillna(0)
     df_resampled['RSI'] = 100 - (100 / (1 + rs))
@@ -267,23 +413,31 @@ def compute_features(df: pd.DataFrame, resample_hours: int,offset_hours=0) -> Tu
             df_resampled['Taker Buy Base Asset Volume'] /
             (df_resampled['Volume'] + 1e-8)
     )
-    df_resampled['Volume'] = df_resampled['Volume'] / df_resampled['Close']    # Technical indicators with safe NaN handling
-    # EMA
+    df_resampled['taker_buy_ratio'] = df_resampled['taker_buy_ratio'].rolling(6).mean()
+    df_resampled['vol_change'] = df_resampled['Volume'].pct_change(periods=1)
 
-    
-    # RSI with safe division
-    # Volatility
     df_resampled['hour'] =  df_resampled.index.hour
-    bb_ma = df_resampled['Close'].rolling(20).mean()
-    bb_std = df_resampled['Close'].rolling(20).std()
+    bb_ma = df_resampled['Close'].rolling(30).mean()
+    bb_std = df_resampled['Close'].rolling(30).std()
     df_resampled['bb_upper'] = bb_ma + (bb_std * 2)
     df_resampled['bb_lower'] = bb_ma - (bb_std * 2)
-    df_resampled['distance_hl_position'] = (df_resampled['vwap'] - df_resampled['local_ATL'])/(df_resampled['local_ATH']-df_resampled['local_ATL']+ 1e-8)
+    df_resampled['distance_hl_position'] = (df_resampled['vwap'] - df_resampled['local_ATL'])/(df_resampled['local_ATH']-df_resampled['local_ATL'])
     df_resampled['distance_hl_position'] = df_resampled['distance_hl_position'].clip(0.0,1.0)
-    df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'] + 1e-8)
+    df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'])
+    df_resampled['bb_pos'] = (df_resampled['Close']-df_resampled['bb_lower']/df_resampled['bb_upper']-df_resampled['bb_lower'])
+    df_resampled['bb_squeeze'] = (
+            df_resampled['bb_width'] < df_resampled['bb_width'].rolling(60).quantile(0.2)
+    ).astype(float)
+    df_resampled['ou_speed'] = df_resampled['Close'].rolling(60).apply(
+        lambda x: ou_parameters(x), raw=True
+    )
+    daily_vwap = df_resampled['vwap'].rolling(6).mean()
+    df_resampled['close_vwap_dev'] = (df_resampled['Close']-daily_vwap)/daily_vwap
     # Drop intermediate columns
 
-    df_resampled = df_resampled.drop(columns=['local_ATH','funding_change','RSI','r6','r1','vwap','pct_change','distance_to_high','distance_to_low','Number of Trades','hour','funding_rate','time_local_Low','time_local_High', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
+
+
+    df_resampled = df_resampled.drop(columns=['local_ATH','funding_change','RSI','bb_squeeze','time_local_Low','time_local_High','candle_pos','trend_slope_short','trades_change','hour_sin','hour_cos','trades_z','vwap','pct_change','distance_to_high','distance_to_low','Number of Trades','hour','funding_rate', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()
