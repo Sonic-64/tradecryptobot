@@ -82,65 +82,102 @@ def extract_features(X, feature_names):
                 break
         streak[n] = s
 
-    rows["streak_signed"]  = streak
-    rows["streak_abs"]     = np.abs(streak)
-    rows["is_1up"]         = (streak >= 1).astype(float)
-    rows["is_2up"]         = (streak >= 2).astype(float)
-    rows["is_3up"]         = (streak >= 3).astype(float)
-    rows["is_4up"]         = (streak >= 4).astype(float)
-    rows["is_1down"]       = (streak <= -1).astype(float)
-    rows["is_2down"]       = (streak <= -2).astype(float)
-    rows["is_3down"]       = (streak <= -3).astype(float)
 
-    # ── C) Short-horizon momentum from Close ──────────────────────────────────
-    for lag in [1, 2, 3, 4, 6, 8]:
-        rows[f"ret_last_{lag}c"] = np.log(
-            close_series[:, -1] / (close_series[:, -1 - lag] + 1e-9))
+
 
     # ── D) Volatility of the window ───────────────────────────────────────────
-    rows["window_vol"]     = log_ret.std(axis=1)
-    rows["window_vol_z"]   = (log_ret.std(axis=1) -
-                               log_ret[:, :log_ret.shape[1]//2].std(axis=1)) / \
-                              (log_ret[:, :log_ret.shape[1]//2].std(axis=1) + 1e-9)
 
-    # ── E) Volume features (if present) ──────────────────────────────────────
-    if "volume_zscore" in feature_names:
-        vi = feature_names.index("volume_zscore")
-        rows["vol_z_last"]    = X[:, -1, vi]
-        rows["vol_z_max"]     = X[:, :, vi].max(axis=1)
-        rows["vol_spike"]     = (X[:, -1, vi] > 2.0).astype(float)
-
-    # ── F) Taker buy ratio change (if present) ────────────────────────────────
-    if "taker_buy_ratio_change" in feature_names:
-        ti = feature_names.index("taker_buy_ratio_change")
-        rows["tbr_change_last"] = X[:, -1, ti]
-        rows["tbr_change_mean"] = X[:, :, ti].mean(axis=1)
-
-    # ── G) Trend slope features ───────────────────────────────────────────────
-    if "trend_slope_short" in feature_names:
-        si = feature_names.index("trend_slope_short")
-        rows["trend_slope_last"]  = X[:, -1, si]
-        rows["trend_slope_mean"]  = X[:, :, si].mean(axis=1)
-        rows["trend_slope_accel"] = X[:, -1, si] - X[:, -4, si]   # recent acceleration
-
-    # ── H) BB width (squeeze detection) ──────────────────────────────────────
-    if "bb_width" in feature_names:
-        bi = feature_names.index("bb_width")
-        rows["bb_width_last"]   = X[:, -1, bi]
-        rows["bb_squeeze"]      = (X[:, -1, bi] < np.percentile(X[:, -1, bi], 20)).astype(float)
-
-    # ── I) Distance from high/low (range position) ───────────────────────────
-    if "distance_hl_position" in feature_names:
-        di = feature_names.index("distance_hl_position")
-        rows["hl_pos_last"]     = X[:, -1, di]
-        rows["hl_pos_extreme_high"] = (X[:, -1, di] > 0.85).astype(float)
-        rows["hl_pos_extreme_low"]  = (X[:, -1, di] < 0.15).astype(float)
 
     return pd.DataFrame(rows)
 
 
 # ── CORRELATION ───────────────────────────────────────────────────────────────
+def compute_feature_corr(features_df: pd.DataFrame,
+                         method="pearson"):
 
+    if method == "pearson":
+        corr_matrix = features_df.corr(method="pearson")
+    else:
+        corr_matrix = features_df.corr(method="spearman")
+
+    return corr_matrix
+
+
+def plot_feature_corr(corr_matrix: pd.DataFrame,
+                      symbol: str,
+                      method: str,
+                      out_path: str):
+
+    matrix = corr_matrix.values
+
+    vmax = min(np.nanmax(np.abs(matrix)), 1.0)
+
+    fig, ax = plt.subplots(
+        figsize=(16, 14),
+        facecolor="#0d0d12"
+    )
+
+    ax.set_facecolor("#0d0d12")
+
+    im = ax.imshow(
+        matrix,
+        aspect="auto",
+        cmap="RdYlGn",
+        vmin=-vmax,
+        vmax=vmax,
+        interpolation="nearest"
+    )
+
+    labels = corr_matrix.columns.tolist()
+
+    ax.set_xticks(range(len(labels)))
+    ax.set_yticks(range(len(labels)))
+
+    ax.set_xticklabels(
+        labels,
+        rotation=90,
+        fontsize=7,
+        color="#ddd"
+    )
+
+    ax.set_yticklabels(
+        labels,
+        fontsize=7,
+        color="#ddd"
+    )
+
+    cb = plt.colorbar(
+        im,
+        ax=ax,
+        fraction=0.02,
+        pad=0.01
+    )
+
+    cb.ax.tick_params(colors="#888", labelsize=8)
+
+    cb.set_label(
+        f"{method.capitalize()} correlation",
+        color="#888",
+        fontsize=8
+    )
+
+    ax.set_title(
+        f"{symbol} — Feature Correlation Matrix",
+        fontsize=12,
+        color="#e0e0e0",
+        pad=12
+    )
+
+    plt.tight_layout()
+
+    fig.savefig(
+        out_path,
+        dpi=180,
+        bbox_inches="tight",
+        facecolor="#0d0d12"
+    )
+
+    print(f"  Feature corr plot → {out_path}")
 def compute_corr(features_df: pd.DataFrame, fwd: np.ndarray, method="pearson"):
     target = pd.Series(fwd, name="fwd_return")
     records = []
@@ -260,26 +297,140 @@ def plot_multi(all_corr: dict, method: str, out_path: str):
     plt.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight", facecolor="#0d0d12")
     print(f"  Multi-symbol plot → {out_path}")
+# ── PRINT FEATURE ↔ FEATURE CORRELATION ─────────────────────────────────────
 
+def print_top_feature_pairs(corr_matrix: pd.DataFrame,
+                            top_n=40,
+                            min_corr=0.5):
+
+    print("\n  Top feature ↔ feature correlations:\n")
+
+    pairs = []
+
+    cols = corr_matrix.columns.tolist()
+
+    for i in range(len(cols)):
+        for j in range(i + 1, len(cols)):
+
+            f1 = cols[i]
+            f2 = cols[j]
+
+            corr = corr_matrix.iloc[i, j]
+
+            if np.isnan(corr):
+                continue
+
+            pairs.append((f1, f2, corr, abs(corr)))
+
+    pairs.sort(key=lambda x: x[3], reverse=True)
+
+    print(f"  {'Feature A':<35} {'Feature B':<35} {'corr':>8}")
+    print("  " + "-" * 85)
+
+    shown = 0
+
+    for f1, f2, corr, abs_corr in pairs:
+
+        if abs_corr < min_corr:
+            continue
+
+        print(
+            f"  {f1:<35} "
+            f"{f2:<35} "
+            f"{corr:>+8.4f}"
+        )
+
+        shown += 1
+
+        if shown >= top_n:
+            break
+
+    if shown == 0:
+        print("  No feature pairs above threshold.")
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 
-def run_one(dir_path: str, method: str) -> pd.DataFrame:
+def run_one(dir_path: str, method: str):
     symbol = os.path.basename(dir_path.rstrip("/")).split("_")[0]
+
     print(f"\n── {symbol}  ({dir_path}) ──")
 
     X, y, feature_names = load_dir(dir_path)
-    fwd   = get_fwd_return(X, y, feature_names)
+
+    fwd = get_fwd_return(X, y, feature_names)
+
     feats = extract_features(X, feature_names)
-    corr  = compute_corr(feats, fwd, method=method)
+
+    # ── FEATURE ↔ TARGET CORRELATION ───────────────────────────────
+    corr = compute_corr(feats, fwd, method=method)
 
     print(f"\n  Top 20 features ({method}):\n")
     print(f"  {'Feature':<35} {'corr':>8}  {'p':>8}  {'sig':>5}  {'n':>6}")
     print("  " + "-" * 70)
+
     for feat, row in corr.head(20).iterrows():
         sig = "✱" if row["significant"] else ""
-        print(f"  {feat:<35} {row['corr']:>+8.4f}  {row['p_value']:>8.4f}  {sig:>5}  {int(row['n']):>6}")
 
+        print(
+            f"  {feat:<35} "
+            f"{row['corr']:>+8.4f}  "
+            f"{row['p_value']:>8.4f}  "
+            f"{sig:>5}  "
+            f"{int(row['n']):>6}"
+        )
+
+    # ── SAVE FEATURE ↔ TARGET CSV ──────────────────────────────────
+    csv_path = f"{symbol}_correlations.csv"
+
+    corr[
+        ["corr", "p_value", "significant", "n"]
+    ].to_csv(
+        csv_path,
+        float_format="%.4f"
+    )
+
+    print(f"  CSV → {csv_path}")
+
+    # ── FEATURE ↔ TARGET PLOT ──────────────────────────────────────
+    png_path = f"{symbol}_correlations.png"
+
+    plot_single(
+        corr,
+        symbol,
+        method,
+        png_path
+    )
+
+    # ── FEATURE ↔ FEATURE CORRELATION ──────────────────────────────
+    feature_corr = compute_feature_corr(
+        feats,
+        method=method
+    )
+
+    # Save matrix CSV
+    feature_corr_csv = f"{symbol}_feature_feature_corr.csv"
+
+    feature_corr.to_csv(
+        feature_corr_csv,
+        float_format="%.4f"
+    )
+
+    print(f"  Feature-feature CSV → {feature_corr_csv}")
+
+    # Save matrix heatmap
+    feature_corr_png = f"{symbol}_feature_feature_corr.png"
+
+    plot_feature_corr(
+        feature_corr,
+        symbol,
+        method,
+        feature_corr_png
+    )
+    print_top_feature_pairs(
+        feature_corr,
+        top_n=40,
+        min_corr=0.5
+    )
     return corr, symbol
 
 

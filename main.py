@@ -52,21 +52,21 @@ if __name__ == "__main__":
         for symbol in symbols:
             crypto.test_hmm(dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
     if args.grid_search:
-        for symbol in symbols:
-            crypto.make_dataset(
-                symbol=symbol,
-                # Defaulting to BTC-USD as per original intent or make it an arg? Adding symbol arg would be good too but sticking to requested ones first.
-                months=args.months,
-                window_days=args.window_days,
-                resample_hours=args.resample_hours,
-                horizon=args.horizon,
-                step_hours=args.step_hours,
-                cutoff=args.cutoff
-            )
-            time.sleep(1)
+            for symbol in symbols:
+                crypto.make_dataset(
+                    symbol=symbol,
+                    # Defaulting to BTC-USD as per original intent or make it an arg? Adding symbol arg would be good too but sticking to requested ones first.
+                    months=args.months,
+                    window_days=args.window_days,
+                    resample_hours=args.resample_hours,
+                    horizon=args.horizon,
+                    step_hours=args.step_hours,
+                    cutoff=args.cutoff
+                )
+                time.sleep(1)
 
-        for symbol in symbols:
-            crypto.grid_search("MLP",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
+            for symbol in symbols:
+                crypto.grid_search("MLP",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
 
     if args.predict:
         crypto.eval_live(months=args.months,window_days=args.window_days,resample_hours=args.resample_hours,horizon=args.horizon)
@@ -133,9 +133,7 @@ if __name__ == "__main__":
                 time.sleep(1)
 
             for symbol in symbols:
-                _, _, _, _ = crypto.Train_val(
-                    dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}",
-                    EPOCHS=args.epochs)
+                crypto.grid_search("MLP",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
             i += 30
 
     if args.paper_trade:

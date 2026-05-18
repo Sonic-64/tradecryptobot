@@ -1,0 +1,23 @@
+{
+  "confirmed": [
+    "volume_zscore",
+    "r6",
+    "variance_ratio",
+    "spectral_entropy",
+    "trend_slope_short",
+    "RSI",
+    "taker_buy_ratio",
+    "distance_hl_position",
+    "bb_width",
+    "bb_pos",
+    "ou_speed",
+    "close_vwap_dev",
+    "adl_slope"
+  ],
+  "tentative": [
+    "vol_change"
+  ],
+  "rf_train_acc": 0.7275,
+  "rf_val_acc": 0.4876,
+  "rf_gap": 0.2399
+}

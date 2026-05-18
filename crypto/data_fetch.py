@@ -312,6 +312,102 @@ def spectral_entropy(series):
     psd_norm = psd_norm[psd_norm > 0]
     return -np.sum(psd_norm * np.log2(psd_norm))
 
+
+def liq_proximity_features(df, window=168):
+    """
+    Approximates liquidation clusters from price history.
+
+    Logic:
+    - High volume at a price level = many positions opened there
+    - Their liquidations sit at fixed distances below/above
+    - Common retail leverage = 10x → liq at ±10% from entry
+    - Common pro leverage = 20x → liq at ±5% from entry
+    """
+    close = df['Close'].values
+    volume = df['Volume'].values
+    n = len(close)
+
+    # features to compute
+    liq_dense_above = np.zeros(n)
+    liq_dense_below = np.zeros(n)
+    liq_imbalance = np.zeros(n)
+    nearest_liq_above = np.zeros(n)
+    nearest_liq_below = np.zeros(n)
+
+    for i in range(window, n):
+        current = close[i]
+
+        # past window of prices and volumes
+        past_prices = close[i - window:i]
+        past_volumes = volume[i - window:i]
+
+        # normalise volumes to weights
+        weights = past_volumes / (past_volumes.sum() + 1e-8)
+
+        liq_above_density = 0.0
+        liq_below_density = 0.0
+        nearest_above = current * 1.20  # default: 20% away
+        nearest_below = current * 0.80
+
+        for lev in [5, 10, 20]:
+            liq_long = past_prices * (1 - 1 / lev)  # long liquidations
+            liq_short = past_prices * (1 + 1 / lev)  # short liquidations
+
+            # density of long liquidations below current price
+            long_liq_below = liq_long[liq_long < current]
+            long_liq_weights = weights[liq_long < current]
+            liq_below_density += long_liq_weights.sum()
+
+            # density of short liquidations above current price
+            short_liq_above = liq_short[liq_short > current]
+            short_liq_weights = weights[liq_short > current]
+            liq_above_density += short_liq_weights.sum()
+
+            # nearest cluster
+            if len(long_liq_below) > 0:
+                nearest_below = max(
+                    nearest_below, long_liq_below.max()
+                )
+            if len(short_liq_above) > 0:
+                nearest_above = min(
+                    nearest_above, short_liq_above.min()
+                )
+
+        liq_dense_above[i] = liq_above_density
+        liq_dense_below[i] = liq_below_density
+        liq_imbalance[i] = (
+                                   liq_above_density - liq_below_density
+                           ) / (liq_above_density + liq_below_density + 1e-8)
+        nearest_liq_above[i] = (nearest_above - current) / current
+        nearest_liq_below[i] = (current - nearest_below) / current
+
+    df['liq_dense_above'] = liq_dense_above
+    df['liq_dense_below'] = liq_dense_below
+    df['liq_imbalance'] = liq_imbalance
+    df['nearest_liq_above'] = nearest_liq_above  # % distance to nearest cluster above
+    df['nearest_liq_below'] = nearest_liq_below  # % distance to nearest cluster below
+
+    return df
+
+
+def accumulation_distribution(df, forecast_horizon=6):
+    mfm = (
+        (df['Close'] - df['Low']) -
+        (df['High'] - df['Close'])
+    ) / (df['High'] - df['Low'] + 1e-8)
+
+    mfv = mfm * df['Volume']
+    adl = mfv.cumsum()
+    adl_std = adl.rolling(42).std()
+
+    df['adl_slope'] = adl.diff(forecast_horizon) / (adl_std + 1e-8)
+    df['adl_div']   = (
+        np.sign(df['Close'].diff(forecast_horizon)) *
+        np.sign(adl.diff(forecast_horizon))
+    )
+    # mfm_mean dropped — redundant with candle_pos
+
+    return df
 def compute_features(df: pd.DataFrame, resample_hours: int,offset_hours=0) -> Tuple[pd.DataFrame, List[str]]:
     """
     Resample data and compute technical indicators once on the full dataset.
@@ -365,10 +461,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int,offset_hours=0) -> Tu
     df_resampled['pct_change'] = df_resampled['pct_change'].fillna(0.0)
     is_ath = df_resampled['Close'] == df_resampled['local_ATH']
     is_atl = df_resampled['Close'] == df_resampled['local_ATL']
-    df_resampled['r1'] = df_resampled['vwap'].pct_change(periods=1, fill_method=None)
     df_resampled['r6'] = df_resampled['vwap'].pct_change(periods=6, fill_method=None)
-    df_resampled['r6_lag'] = df_resampled['r6'].shift(6)
-    df_resampled['r6_lag2'] = df_resampled['r6'].shift(12)
     df_resampled['candle_pos'] = (df_resampled['Close'] - df_resampled['Low'])/(df_resampled['High']-df_resampled['Low']+ 1e-8)
     df_resampled['candle_pos'] = df_resampled['candle_pos'].clip(0.0, 1.0)
     trades_mean = df_resampled['Number of Trades'].rolling(window=168,min_periods=1).mean()
@@ -388,12 +481,12 @@ def compute_features(df: pd.DataFrame, resample_hours: int,offset_hours=0) -> Tu
     cumsum_not_atl = not_atl.cumsum()
     last_atl_cumsum = cumsum_not_atl.where(is_atl).ffill().fillna(0)
     df_resampled['time_local_Low'] = cumsum_not_atl - last_atl_cumsum
-    df_resampled['lyapunov'] = df_resampled['Close'].rolling(60).apply(
+    df_resampled['lyapunov'] = df_resampled['Close'].rolling(90).apply(
         lambda x: lyapunov_exponent(x), raw=True)
     df_resampled['phase_density'] = df_resampled['Close'].rolling(60).apply(
         lambda x: phase_space_density(x), raw=True
     )
-    df_resampled['variance_ratio'] = df_resampled['Close'].rolling(60).apply(
+    df_resampled['variance_ratio'] = df_resampled['Close'].rolling(90).apply(
         lambda x: variance_ratio(x, k=6), raw=True)
     df_resampled['spectral_entropy'] = df_resampled['Close'].rolling(64).apply(
         lambda x: spectral_entropy(x), raw=True
@@ -424,7 +517,7 @@ def compute_features(df: pd.DataFrame, resample_hours: int,offset_hours=0) -> Tu
     df_resampled['distance_hl_position'] = (df_resampled['vwap'] - df_resampled['local_ATL'])/(df_resampled['local_ATH']-df_resampled['local_ATL'])
     df_resampled['distance_hl_position'] = df_resampled['distance_hl_position'].clip(0.0,1.0)
     df_resampled['bb_width'] = (df_resampled['bb_upper'] - df_resampled['bb_lower']) / (df_resampled['Close'])
-    df_resampled['bb_pos'] = (df_resampled['Close']-df_resampled['bb_lower']/df_resampled['bb_upper']-df_resampled['bb_lower'])
+    df_resampled['bb_pos'] = (df_resampled['vwap']-df_resampled['bb_lower'])/(df_resampled['bb_upper']-df_resampled['bb_lower'])
     df_resampled['bb_squeeze'] = (
             df_resampled['bb_width'] < df_resampled['bb_width'].rolling(60).quantile(0.2)
     ).astype(float)
@@ -434,10 +527,10 @@ def compute_features(df: pd.DataFrame, resample_hours: int,offset_hours=0) -> Tu
     daily_vwap = df_resampled['vwap'].rolling(6).mean()
     df_resampled['close_vwap_dev'] = (df_resampled['Close']-daily_vwap)/daily_vwap
     # Drop intermediate columns
+    df_resampled = accumulation_distribution(df_resampled)
 
 
-
-    df_resampled = df_resampled.drop(columns=['local_ATH','funding_change','RSI','bb_squeeze','time_local_Low','time_local_High','candle_pos','trend_slope_short','trades_change','hour_sin','hour_cos','trades_z','vwap','pct_change','distance_to_high','distance_to_low','Number of Trades','hour','funding_rate', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
+    df_resampled = df_resampled.drop(columns=['local_ATH','funding_change','volume_zscore','phase_density','vol_change','funding_z','bb_squeeze','time_local_Low','time_local_High','candle_pos','trades_change','hour_sin','hour_cos','trades_z','vwap','pct_change','distance_to_high','distance_to_low','Number of Trades','hour','funding_rate', 'local_ATL','Quote Asset Volume','Taker Buy Quote Asset Volume','Taker Buy Base Asset Volume','bb_upper','bb_lower','Open','Volume'])
     
     # Drop any remaining NaN rows
     df_resampled = df_resampled.dropna()
