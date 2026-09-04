@@ -28,7 +28,7 @@ class NumpyDataset(Dataset):
     def __init__(self, X_path, y_path, features_path,filter_noise=True,min_move = 0.004):
         self.X = torch.FloatTensor(np.load(X_path))
         self.y_prices = torch.FloatTensor(np.load(y_path))
-        MODEL_EXCLUDE = {'Close', 'High', 'Low'}
+        MODEL_EXCLUDE = {'Close', 'High', 'Low','SMA'}
 
         with open(features_path, 'r') as f:
             self.feature_names = json.load(f)

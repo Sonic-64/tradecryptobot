@@ -18,9 +18,9 @@ if __name__ == "__main__":
     parser.add_argument("--data_fetch", action="store_true", help="fetching data")
     parser.add_argument("--train", action="store_true", help="Training mode")
     parser.add_argument("--predict", action="store_true", help="Prediction mode")
-    parser.add_argument("--window_days", type=int, default=1, help="Number of past days in each training window")
-    parser.add_argument("--horizon", type=int, default=6, help="Number of resampled steps ahead to predict")
-    parser.add_argument("--resample_hours", type=int, default=4, help="Resampling interval in hours")
+    parser.add_argument("--window_days", type=int, default=10, help="Number of past days in each training window")
+    parser.add_argument("--horizon", type=int, default=4, help="Number of resampled steps ahead to predict")
+    parser.add_argument("--resample_hours", type=int, default=6, help="Resampling interval in hours")
     parser.add_argument("--months", type=int, default=24, help="Number of past months to fetch (-1 for full history)")
     parser.add_argument("--step_hours", type=int, default=1, help="Stride between sliding windows")
     parser.add_argument("--evaluate_hmm",action="store_true",help="evaluate HMM configs")
@@ -66,7 +66,7 @@ if __name__ == "__main__":
                 time.sleep(1)
 
             for symbol in symbols:
-                crypto.grid_search("MLP",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
+                crypto.grid_search("CNN",dataset_dir=f"{symbol}_{args.window_days}_{args.resample_hours}_{args.horizon}")
 
     if args.predict:
         crypto.eval_live(months=args.months,window_days=args.window_days,resample_hours=args.resample_hours,horizon=args.horizon)

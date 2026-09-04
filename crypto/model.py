@@ -20,7 +20,7 @@ class HMMRegime:
         # features_config kept for backward compat but ignored
         # FEATURES is now fixed for stability
         self.model = GaussianHMM(
-            n_components=2,
+            n_components=3,
             covariance_type="diag",
             n_iter=300,
             min_covar=0.02,
@@ -35,11 +35,7 @@ class HMMRegime:
         """
         close = df['Close'].values.astype(np.float64)
         distance = df["distance_hl_position"].values.astype(np.float64)
-        funding_z = df["funding_z"].values.astype(np.float64)
-        volume = df["volume_zscore"].values.astype(np.float64)
         taker = df["taker_buy_ratio"].values.astype(np.float64)
-        funding_delta = np.diff(funding_z, prepend=funding_z[0])
-        funding_delta = pd.Series(funding_delta).rolling(window=8,min_periods=1).mean().values
         taker_delta = np.diff(taker, prepend=taker[0])
         taker_delta = pd.Series(taker_delta).rolling(8, min_periods=1).mean().values
 
@@ -52,14 +48,14 @@ class HMMRegime:
 
         out[1:, 0] = r1
         # --- 2. MEDIUM-TERM TREND
-        r8 = np.log(close[8:] / (close[:-8] + 1e-10))
+        r8 = np.log(close[6:] / (close[:-6] + 1e-10))
         out[8:, 1] = r8
 
         # --- 3. TREND STRENGTH (not volatility!)
 
         sign = (np.sign(r8))
-        sign_strength = pd.Series(sign).rolling(7, min_periods=1).mean().abs().values
-        ext_dist = pd.Series(distance * 2 - 1).rolling(16, min_periods=1).mean().abs().values
+        sign_strength = pd.Series(sign).rolling(18, min_periods=1).mean().abs().values
+        ext_dist = pd.Series(distance * 2 - 1).rolling(18, min_periods=1).mean().abs().values
         out[8:, 2] = sign_strength
         out[:, 3] = ext_dist
 
@@ -312,6 +308,8 @@ class LSTMModel(nn.Module):
         out = self.dropout(out)
 
         return self.out(out)
+
+
 class CNNModel(nn.Module):
     """
     1-D Temporal CNN for binary direction classification.
